@@ -96,7 +96,7 @@ pub:
 	font_bytes_bold   []u8
 	font_bytes_mono   []u8
 	font_bytes_italic []u8
-	native_rendering  bool // Cocoa on macOS/iOS, GDI+ on Windows
+	native_rendering  bool // Cocoa on macOS/iOS, Win32/GDI+ on Windows
 	// drag&drop
 	enable_dragndrop             bool // enable file dropping (drag'n'drop), default is false
 	max_dropped_files            int = 1 // max number of dropped files to process (default: 1)
@@ -189,6 +189,11 @@ pub mut:
 	pressed_keys_edge [key_code_max]bool // true when the previous state of pressed_keys,
 	// *before* the current event was different
 	fps FPSConfig
+	win32 &Win32Userdata
+}
+
+fn gg_init_win32_window(user_data voidptr) {
+
 }
 
 fn gg_init_sokol_window(user_data voidptr) {
@@ -457,7 +462,7 @@ pub fn new_context(cfg Config) &Context {
 		config: cfg
 		ft: 0
 		ui_mode: cfg.ui_mode
-		native_rendering: cfg.native_rendering
+		native_rendering: true//cfg.native_rendering
 		window: sapp.Desc{
 			init_userdata_cb: gg_init_sokol_window
 			frame_userdata_cb: gg_frame_fn
@@ -478,7 +483,16 @@ pub fn new_context(cfg Config) &Context {
 			max_dropped_file_path_length: cfg.max_dropped_file_path_length
 			swap_interval: cfg.swap_interval
 		}
+		win32: 0
 	}
+	
+	$if windows {
+		if ctx.native_rendering {
+			hwnd := win32_create_window(90, 90, cfg.width, cfg.height, cfg.window_title)
+			ctx.win32 = win32_set_userdata(hwnd, ctx)
+		}
+	}
+	
 	ctx.set_bg_color(cfg.bg_color)
 	// C.printf('new_context() %p\n', cfg.user_data)
 	return ctx
@@ -486,6 +500,14 @@ pub fn new_context(cfg Config) &Context {
 
 // run starts the main loop of the context.
 pub fn (mut ctx Context) run() {
+
+	$if windows {
+		if ctx.native_rendering {
+			win32_run_message_loop()
+			return
+		}
+	}
+
 	// set context late, in case it changed (e.g., due to embedding)
 	ctx.window = sapp.Desc{
 		...ctx.window
@@ -525,6 +547,14 @@ pub fn (ctx &Context) begin() {
 	if ctx.render_text && ctx.font_inited {
 		ctx.ft.flush()
 	}
+	
+	$if windows {
+		if ctx.native_rendering {
+			// TODO: Move from win32.v
+			return
+		}
+	}
+	
 	sgl.defaults()
 	sgl.matrix_mode_projection()
 	sgl.ortho(0.0, f32(sapp.width()), f32(sapp.height()), 0.0, -1.0, 1.0)
@@ -539,6 +569,14 @@ pub fn (ctx &Context) end() {
 			ctx.show_fps()
 		}
 	}
+
+	$if windows {
+		if ctx.native_rendering {
+			// TODO: Move from win32.v
+			return
+		}
+	}
+
 	gfx.begin_default_pass(ctx.clear_pass, sapp.width(), sapp.height())
 	sgl.draw()
 	gfx.end_pass()

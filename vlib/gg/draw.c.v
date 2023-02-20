@@ -14,6 +14,13 @@ import math
 // functions like `draw_rect_empty` or `draw_triangle_empty` etc.
 [inline]
 pub fn (ctx &Context) draw_pixel(x f32, y f32, c gx.Color) {
+	$if windows {
+		if ctx.native_rendering {
+			win32_draw_pixel(ctx.win32.hdc, x, y, c)
+			return
+		}
+	}
+
 	if c.a != 255 {
 		sgl.load_pipeline(ctx.pipeline.alpha)
 	}
@@ -36,6 +43,13 @@ pub fn (ctx &Context) draw_pixels(points []f32, c gx.Color) {
 	}
 	len := points.len / 2
 
+	$if windows {
+		if ctx.native_rendering {
+			win32_draw_pixels(ctx.win32.hdc, points, c)
+			return
+		}
+	}
+
 	if c.a != 255 {
 		sgl.load_pipeline(ctx.pipeline.alpha)
 	}
@@ -51,7 +65,7 @@ pub fn (ctx &Context) draw_pixels(points []f32, c gx.Color) {
 
 // draw_line draws a line between the points `x,y` and `x2,y2` in color `c`.
 pub fn (ctx &Context) draw_line(x f32, y f32, x2 f32, y2 f32, c gx.Color) {
-	$if macos {
+	$if macos || windows {
 		if ctx.native_rendering {
 			// Make the line more clear on hi dpi screens: draw a rectangle
 			mut width := math.abs(x2 - x)
@@ -206,6 +220,13 @@ pub fn (ctx &Context) draw_rect_filled(x f32, y f32, w f32, h f32, c gx.Color) {
 		}
 	}
 
+	$if windows {
+		if ctx.native_rendering {
+			win32_draw_rect_filled(ctx.win32.hdc, x, y, w, h, c)
+			return
+		}
+	}
+
 	if c.a != 255 {
 		sgl.load_pipeline(ctx.pipeline.alpha)
 	}
@@ -227,6 +248,13 @@ pub fn (ctx &Context) draw_rect_filled(x f32, y f32, w f32, h f32, c gx.Color) {
 pub fn (ctx &Context) draw_rounded_rect_empty(x f32, y f32, w f32, h f32, radius f32, c gx.Color) {
 	if w <= 0 || h <= 0 || radius < 0 {
 		return
+	}
+	
+	$if windows {
+		if ctx.native_rendering {
+			win32_draw_rounded_rect_empty(ctx.win32.hdc, x, y, w, h, radius, c)
+			return
+		}
 	}
 
 	if c.a != 255 {
@@ -326,6 +354,13 @@ pub fn (ctx &Context) draw_rounded_rect_empty(x f32, y f32, w f32, h f32, radius
 pub fn (ctx &Context) draw_rounded_rect_filled(x f32, y f32, w f32, h f32, radius f32, c gx.Color) {
 	if w <= 0 || h <= 0 || radius < 0 {
 		return
+	}
+
+	$if windows {
+		if ctx.native_rendering {
+			win32_draw_rounded_rect_filled(ctx.win32.hdc, x, y, w, h, radius, c)
+			return
+		}
 	}
 
 	if c.a != 255 {

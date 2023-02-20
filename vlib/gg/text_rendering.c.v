@@ -167,6 +167,12 @@ pub fn (ctx &Context) draw_text(x int, y int, text_ string, cfg gx.TextCfg) {
 			return
 		}
 	}
+	$if windows {
+		if ctx.native_rendering {
+			//ctx.draw_rect_filled(x, y, text_.len, 20, cfg.color)
+			return // TODO
+		}
+	}
 	if !ctx.font_inited {
 		eprintln('gg: draw_text(): font not initialized')
 		return
@@ -199,6 +205,11 @@ pub fn (ctx &Context) text_width(s string) int {
 			return C.darwin_text_width(s)
 		}
 	}
+	$if windows {
+		if ctx.native_rendering {
+			return 0//s.len // TODO
+		}
+	}
 	// ctx.set_text_cfg(cfg) TODO
 	if !ctx.font_inited {
 		return 0
@@ -221,6 +232,11 @@ pub fn (ctx &Context) text_width(s string) int {
 
 // text_height returns the height of the `string` `s` in pixels.
 pub fn (ctx &Context) text_height(s string) int {
+	$if windows {
+		if ctx.native_rendering {
+			return 0//20 // TODO
+		}
+	}
 	// ctx.set_text_cfg(cfg) TODO
 	if !ctx.font_inited {
 		return 0
@@ -232,6 +248,11 @@ pub fn (ctx &Context) text_height(s string) int {
 
 // text_size returns the width and height of the `string` `s` in pixels.
 pub fn (ctx &Context) text_size(s string) (int, int) {
+	$if windows {
+		if ctx.native_rendering {
+			return 0, 0 // TODO
+		}
+	}
 	// ctx.set_text_cfg(cfg) TODO
 	if !ctx.font_inited {
 		return 0, 0
