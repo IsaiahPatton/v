@@ -93,6 +93,14 @@ pub fn (ctx &Context) draw_line(x f32, y f32, x2 f32, y2 f32, c gx.Color) {
 
 // draw_line_with_config draws a line between the points `x,y` and `x2,y2` using `PenConfig`.
 pub fn (ctx &Context) draw_line_with_config(x f32, y f32, x2 f32, y2 f32, config PenConfig) {
+	$if windows {
+		if ctx.native_rendering {
+			// TODO
+			return
+		}
+	}
+
+
 	if config.color.a != 255 {
 		sgl.load_pipeline(ctx.pipeline.alpha)
 	}
@@ -145,6 +153,13 @@ pub fn (ctx &Context) draw_line_with_config(x f32, y f32, x2 f32, y2 f32, config
 // draw_poly_empty draws the outline of a polygon, given an array of points, and a color.
 // NOTE that the points must be given in clockwise winding order.
 pub fn (ctx &Context) draw_poly_empty(points []f32, c gx.Color) {
+	$if windows {
+		if ctx.native_rendering {
+			// TODO
+			return
+		}
+	}
+
 	len := points.len / 2
 	if points.len % 2 != 0 || len < 3 {
 		return
@@ -167,6 +182,13 @@ pub fn (ctx &Context) draw_poly_empty(points []f32, c gx.Color) {
 // NOTE that the points must be given in clockwise winding order.
 // The contents of the `points` array should be `x` and `y` coordinate pairs.
 pub fn (ctx &Context) draw_convex_poly(points []f32, c gx.Color) {
+	$if windows {
+		if ctx.native_rendering {
+			// TODO
+			return
+		}
+	}
+
 	len := points.len / 2
 	if points.len % 2 != 0 || len < 3 {
 		return
@@ -195,6 +217,13 @@ pub fn (ctx &Context) draw_convex_poly(points []f32, c gx.Color) {
 // `x`,`y` is the top-left corner of the rectangle.
 // `w` is the width, `h` is the height and `c` is the color of the outline.
 pub fn (ctx &Context) draw_rect_empty(x f32, y f32, w f32, h f32, c gx.Color) {
+	$if windows {
+		if ctx.native_rendering {
+			win32_draw_rect_empty(ctx.win32.hdc, x, y, w, h, c)
+			return
+		}
+	}
+
 	if c.a != 255 {
 		sgl.load_pipeline(ctx.pipeline.alpha)
 	}
@@ -469,6 +498,13 @@ pub fn (ctx &Context) draw_rounded_rect_filled(x f32, y f32, w f32, h f32, radiu
 // `x3`,`y3` defines the third point
 // `c` is the color of the outline.
 pub fn (ctx &Context) draw_triangle_empty(x f32, y f32, x2 f32, y2 f32, x3 f32, y3 f32, c gx.Color) {
+	$if windows {
+		if ctx.native_rendering {
+			// TODO
+			return
+		}
+	}
+	
 	if c.a != 255 {
 		sgl.load_pipeline(ctx.pipeline.alpha)
 	}
@@ -488,6 +524,13 @@ pub fn (ctx &Context) draw_triangle_empty(x f32, y f32, x2 f32, y2 f32, x3 f32, 
 // `x3`,`y3` defines the third point
 // `c` is the color of the outline.
 pub fn (ctx &Context) draw_triangle_filled(x f32, y f32, x2 f32, y2 f32, x3 f32, y3 f32, c gx.Color) {
+	$if windows {
+		if ctx.native_rendering {
+			// TODO
+			return
+		}
+	}
+	
 	if c.a != 255 {
 		sgl.load_pipeline(ctx.pipeline.alpha)
 	}
@@ -539,6 +582,13 @@ fn radius_to_segments(r f32) int {
 // `radius` defines the radius of the circle.
 // `c` is the color of the outline.
 pub fn (ctx &Context) draw_circle_empty(x f32, y f32, radius f32, c gx.Color) {
+	$if windows {
+		if ctx.native_rendering {
+			// TODO
+			return
+		}
+	}
+	
 	if c.a != 255 {
 		sgl.load_pipeline(ctx.pipeline.alpha)
 	}
@@ -586,6 +636,13 @@ pub fn (ctx &Context) draw_circle_filled(x f32, y f32, radius f32, c gx.Color) {
 pub fn (ctx &Context) draw_polygon_filled(x f32, y f32, size f32, edges int, rotation f32, c gx.Color) {
 	if edges <= 0 {
 		return
+	}
+	
+	$if windows {
+		if ctx.native_rendering {
+			// TODO
+			return
+		}
 	}
 
 	if c.a != 255 {
@@ -637,6 +694,13 @@ pub fn (ctx &Context) draw_circle_line(x f32, y f32, radius int, segments int, c
 			return
 		}
 	}
+	
+	$if windows {
+		if ctx.native_rendering {
+			// TODO
+			return
+		}
+	}
 
 	if c.a != 255 {
 		sgl.load_pipeline(ctx.pipeline.alpha)
@@ -665,6 +729,14 @@ pub fn (ctx &Context) draw_slice_empty(x f32, y f32, radius f32, start_angle f32
 	if segments <= 0 || radius <= 0 {
 		return
 	}
+
+	$if windows {
+		if ctx.native_rendering {
+			// TODO
+			return
+		}
+	}
+	
 	if c.a != 255 {
 		sgl.load_pipeline(ctx.pipeline.alpha)
 	}
@@ -704,6 +776,13 @@ pub fn (ctx &Context) draw_slice_filled(x f32, y f32, radius f32, start_angle f3
 	if start_angle == end_angle {
 		ctx.draw_slice_empty(x, y, radius, start_angle, end_angle, 1, c)
 		return
+	}
+
+	$if windows {
+		if ctx.native_rendering {
+			// TODO
+			return
+		}
 	}
 
 	if c.a != 255 {
@@ -754,6 +833,13 @@ pub fn (ctx Context) draw_arc_line(x f32, y f32, radius f32, start_angle f32, en
 		ctx.draw_pixel(xx, yy, c)
 		return
 	}
+	
+	$if windows {
+		if ctx.native_rendering {
+			// TODO
+			return
+		}
+	}
 
 	if c.a != 255 {
 		sgl.load_pipeline(ctx.pipeline.alpha)
@@ -800,6 +886,13 @@ pub fn (ctx &Context) draw_arc_empty(x f32, y f32, inner_radius f32, thickness f
 	if inner_radius == outer_radius {
 		ctx.draw_arc_line(x, y, outer_radius, start_angle, end_angle, segments, c)
 		return
+	}
+
+	$if windows {
+		if ctx.native_rendering {
+			// TODO
+			return
+		}
 	}
 
 	if c.a != 255 {
@@ -868,6 +961,13 @@ pub fn (ctx &Context) draw_arc_filled(x f32, y f32, inner_radius f32, thickness 
 		ctx.draw_arc_empty(x, y, inner_radius, thickness, start_angle, end_angle, 1, c)
 		return
 	}
+	
+	$if windows {
+		if ctx.native_rendering {
+			// TODO
+			return
+		}
+	}
 
 	if c.a != 255 {
 		sgl.load_pipeline(ctx.pipeline.alpha)
@@ -908,6 +1008,13 @@ pub fn (ctx &Context) draw_arc_filled(x f32, y f32, inner_radius f32, thickness 
 // `rh` defines the *height* radius of the ellipse.
 // `c` is the color of the outline.
 pub fn (ctx &Context) draw_ellipse_empty(x f32, y f32, rw f32, rh f32, c gx.Color) {
+	$if windows {
+		if ctx.native_rendering {
+			// TODO
+			return
+		}
+	}
+
 	if c.a != 255 {
 		sgl.load_pipeline(ctx.pipeline.alpha)
 	}
@@ -928,6 +1035,13 @@ pub fn (ctx &Context) draw_ellipse_empty(x f32, y f32, rw f32, rh f32, c gx.Colo
 // `rh` defines the *height* radius of the ellipse.
 // `c` is the fill color.
 pub fn (ctx &Context) draw_ellipse_filled(x f32, y f32, rw f32, rh f32, c gx.Color) {
+	$if windows {
+		if ctx.native_rendering {
+			// TODO
+			return
+		}
+	}
+
 	if c.a != 255 {
 		sgl.load_pipeline(ctx.pipeline.alpha)
 	}
@@ -960,6 +1074,14 @@ pub fn (ctx &Context) draw_cubic_bezier_in_steps(points []f32, steps u32, c gx.C
 	if steps <= 0 || points.len != 8 {
 		return
 	}
+	
+	$if windows {
+		if ctx.native_rendering {
+			// TODO
+			return
+		}
+	}
+	
 	if c.a != 255 {
 		sgl.load_pipeline(ctx.pipeline.alpha)
 	}

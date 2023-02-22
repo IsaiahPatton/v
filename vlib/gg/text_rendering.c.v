@@ -123,6 +123,11 @@ pub fn (ctx &Context) set_text_cfg(cfg gx.TextCfg) {
 	if !ctx.font_inited {
 		return
 	}
+	$if windows {
+		if ctx.native_rendering {
+			return
+		}
+	}
 	if cfg.bold {
 		ctx.ft.fons.set_font(ctx.ft.font_bold)
 	} else if cfg.mono {
@@ -169,6 +174,8 @@ pub fn (ctx &Context) draw_text(x int, y int, text_ string, cfg gx.TextCfg) {
 	}
 	$if windows {
 		if ctx.native_rendering {
+			win32_draw_tex(ctx.win32.hdc, text_, x, y)
+		
 			//ctx.draw_rect_filled(x, y, text_.len, 20, cfg.color)
 			return // TODO
 		}
@@ -207,7 +214,8 @@ pub fn (ctx &Context) text_width(s string) int {
 	}
 	$if windows {
 		if ctx.native_rendering {
-			return 0//s.len // TODO
+			width, _ := win32_text_size(ctx.win32.hdc, s)
+			return int(width)
 		}
 	}
 	// ctx.set_text_cfg(cfg) TODO
@@ -234,7 +242,8 @@ pub fn (ctx &Context) text_width(s string) int {
 pub fn (ctx &Context) text_height(s string) int {
 	$if windows {
 		if ctx.native_rendering {
-			return 0//20 // TODO
+			_, height := win32_text_size(ctx.win32.hdc, s)
+			return int(height)
 		}
 	}
 	// ctx.set_text_cfg(cfg) TODO
@@ -243,14 +252,16 @@ pub fn (ctx &Context) text_height(s string) int {
 	}
 	mut buf := [4]f32{}
 	ctx.ft.fons.text_bounds(0, 0, s, &buf[0])
-	return int((buf[3] - buf[1]) / ctx.scale)
+	res := int((buf[3] - buf[1]) / ctx.scale)
+	return res
 }
 
 // text_size returns the width and height of the `string` `s` in pixels.
 pub fn (ctx &Context) text_size(s string) (int, int) {
 	$if windows {
 		if ctx.native_rendering {
-			return 0, 0 // TODO
+			width, height := win32_text_size(ctx.win32.hdc, s)
+			return int(width), int(height)
 		}
 	}
 	// ctx.set_text_cfg(cfg) TODO

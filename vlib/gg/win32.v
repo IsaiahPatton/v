@@ -1,3 +1,4 @@
+// (c) 2023 Isaiah.
 module gg
 
 import gx
@@ -6,7 +7,10 @@ import gx
 #include <stdio.h>
 #include <wingdi.h>
 #flag -lgdi32
+#flag -I @VEXEROOT/thirdparty/win32
+#include "win32_api.c"
 
+// Reference: https://wiki.winehq.org/List_Of_Windows_Messages
 const (
 	cs_vredraw          = 0x0001
 	cs_hredraw          = 0x0002
@@ -48,11 +52,17 @@ struct WndClassEx {
 	h_icon_sm       &u16 = unsafe { nil }
 }
 
+// Rectangle (https://learn.microsoft.com/en-us/windows/win32/api/windef/ns-windef-rect)
 struct C.tagRECT {
 	left   f32
 	top    f32
 	right  f32
 	bottom f32
+}
+
+struct C.tagSIZE {
+	cx f32
+	cy f32
 }
 
 fn C.RegisterClassEx(class &WndClassEx) int
@@ -84,6 +94,8 @@ fn C.RGB(r int, g int, b int) C.COLORREF
 
 fn C.FillRect(hdc C.HDC, rect &C.tagRECT, hbr C.HBRUSH)
 
+fn C.FrameRect(hdc C.HDC, rect &C.tagRECT, hbr C.HBRUSH)
+
 fn C.InvalidateRect(hwnd C.HWND, rect &C.tagRECT, berase bool)
 
 fn C.SetTimer(hwnd C.HWND, id u32, ela u32, C.TIMERPROC)
@@ -94,11 +106,70 @@ fn C.GetWindowLongPtr(hwnd C.HWND, index int) C.LONG_PTR
 
 fn C.SetWindowLongPtr(hwnd C.HWND, index int, new_long C.LONG_PTR)
 
+fn C.GetClientRect(hwnd C.HWND, lprect &C.tagRECT)
+
+fn C.my_text_size(hdc C.HDC, lpchtext &u16, le int) C.tagSIZE
+
+/*
+int DrawTextA(
+  [in]      HDC    hdc,
+  [in, out] LPCSTR lpchText,
+  [in]      int    cchText,
+  [in, out] LPRECT lprc,
+  [in]      UINT   format
+);
+*/
+
+fn C.DrawText(hdc C.HDC, lpchtext &u16, cch int, rect &C.tagRECT, format u32)
+
+fn C.my_draw_text(hdc C.HDC, rect &C.tagRECT)
+
+fn C.SelectObject(hdc C.HDC, h C.HGDIOBJ)
+
+fn C.my_scissor_rect(hdc C.HDC, x int, y int, w int, h int)
+
+fn C.fix_text_background(hdc C.HDC)
+
+fn win32_scissor_rect(hdc C.HDC, x int, y int, w int, h int) {
+	C.my_scissor_rect(hdc, x, y, w, h)
+}
+
+fn win32_draw_tex(hdc C.HDC, text string, x int, y int) {
+	rect := &C.tagRECT{
+		top: y
+		left: x
+		right: x + 200
+		bottom: y + 200
+	}
+
+	C.fix_text_background(hdc)
+	C.DrawText(hdc, text.to_wide(), -1, rect, 0)
+	//size := C.my_text_size(hdc, text.to_wide(), text.len)
+	//dump(size.cx)
+	//win32_draw_rect_empty(hdc, x, y, size.cx, size.cy, gx.blue)
+}
+
+fn win32_text_size(hdc C.HDC, text string) (f32, f32) {
+	size := C.my_text_size(hdc, text.to_wide(), text.len)
+	return size.cx, size.cy
+}
+
+fn cstr(the_string string) &char {
+	return &char(the_string.str)
+}
+
+fn win32_get_window_size(hwnd C.HWND) (int, int) {
+	rect := &C.tagRECT{}
+	C.GetClientRect(hwnd, rect)
+	return int(rect.right - rect.left), int(rect.bottom - rect.top)
+}
+
 fn main() {
 	win32_create_window(600, 300, 500, 400, 'My Program')
 	win32_run_message_loop()
 }
 
+// Create a new Win32 Window
 fn win32_create_window(x int, y int, w int, h int, title string) &C.HWND {
 	cw := (C.COLOR_WINDOW + 1)
 	wndclass := WndClassEx{
@@ -127,7 +198,9 @@ fn win32_create_window(x int, y int, w int, h int, title string) &C.HWND {
 	return hwnd
 }
 
-// TODO:
+// Run the Win32 message loop
+// TODO: This needs to be injected at the end of main;
+//       or else will crash.
 fn win32_run_message_loop() {
 	mut msg := C.NULL
 	for C.GetMessage(&msg, C.NULL, 0, 0) {
@@ -136,7 +209,7 @@ fn win32_run_message_loop() {
 	}
 }
 
-// test:
+// Stores HDC & HWND of window
 [heap]
 struct Win32Userdata {
 mut:
@@ -161,6 +234,7 @@ fn win32_set_userdata(hwnd C.HWND, ctx &Context) &Win32Userdata {
 	return data
 }
 
+// Win32 Window Events
 fn my_wnd_proc(hwnd C.HWND, message u32, wParam C.WPARAM, lParam C.LPARAM) C.LRESULT {
 	
 	mut dat := C.GetWindowLongPtr(hwnd, gwlp_userdata)
@@ -171,7 +245,7 @@ fn my_wnd_proc(hwnd C.HWND, message u32, wParam C.WPARAM, lParam C.LPARAM) C.LRE
 	}
 
 	if message == wm_create {
-		target_fps := 1
+		target_fps := 1 // 20
 		C.SetTimer(hwnd, 1, (1000 / target_fps), C.NULL)
 		return C.LRESULT(0)
 	}
@@ -196,7 +270,7 @@ fn my_wnd_proc(hwnd C.HWND, message u32, wParam C.WPARAM, lParam C.LPARAM) C.LRE
 
 	if message == wm_paint {
 		mut ps := unsafe { nil }
-		mut hdc := C.BeginPaint(hwnd, &ps)
+		hdc := C.BeginPaint(hwnd, &ps)
 		
 		if dat != unsafe { nil } {
 			mut mydat := unsafe { &Win32Userdata(voidptr(dat)) }
@@ -214,7 +288,6 @@ fn my_wnd_proc(hwnd C.HWND, message u32, wParam C.WPARAM, lParam C.LPARAM) C.LRE
 
 // Draw rect filled
 fn win32_draw_rect_filled(hdc C.HDC, x f32, y f32, w f32, h f32, c gx.Color) {
-	dump('DRAW_RECT')
 	hbrush := C.CreateSolidBrush(C.RGB(c.r, c.g, c.b))
 	rec := C.tagRECT{x, y, x + w, y + h}
 	C.FillRect(hdc, &rec, hbrush)
@@ -223,17 +296,20 @@ fn win32_draw_rect_filled(hdc C.HDC, x f32, y f32, w f32, h f32, c gx.Color) {
 
 // Draw rect empty
 fn win32_draw_rect_empty(hdc C.HDC, x f32, y f32, w f32, h f32, c gx.Color) {
-	dump('DRAW_RECT')
+	hbrush := C.CreateSolidBrush(C.RGB(c.r, c.g, c.b))
+	rec := C.tagRECT{x, y, x + w, y + h}
+	C.FrameRect(hdc, &rec, hbrush)
+	C.DeleteObject(hbrush)
 }
 
 // Draw rounded rect empty
 fn win32_draw_rounded_rect_empty(hdc C.HDC, x f32, y f32, w f32, h f32, radius f32, c gx.Color) {
-	dump('DRAW_RECT')
+	win32_draw_rect_empty(hdc, x, y, w, h, c)
 }
 
 // Draw rounded rect filled
 fn win32_draw_rounded_rect_filled(hdc C.HDC, x f32, y f32, w f32, h f32, radius f32, c gx.Color) {
-	dump('DRAW_RECT')
+	win32_draw_rect_filled(hdc, x, y, w, h, c)
 }
 
 // Draw pixel
@@ -243,5 +319,8 @@ fn win32_draw_pixel(hdc C.HDC, x f32, y f32, c gx.Color) {
 
 // Draw pixels
 fn win32_draw_pixels(hdc C.HDC, points []f32, c gx.Color) {
-	dump('DRAW_RECT')
+	for i in 0 .. (points.len / 2) {
+		x, y := points[i * 2], points[i * 2 + 1]
+		win32_draw_pixel(hdc, x, y, c)
+	}
 }

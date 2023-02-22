@@ -7,6 +7,13 @@ import sokol.sgl
 
 // required for ui.DrawDevice interface (with &gg.Context as an instance)
 pub fn (ctx &Context) scissor_rect(x int, y int, w int, h int) {
+	$if windows {
+		if ctx.native_rendering {
+			win32_scissor_rect(ctx.win32.hdc, x, y, w, h)
+			return
+		}
+	}
+
 	sgl.scissor_rect(int(ctx.scale * x), int(ctx.scale * y), int(ctx.scale * w), int(ctx.scale * h),
 		true)
 }

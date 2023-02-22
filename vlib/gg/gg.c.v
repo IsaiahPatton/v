@@ -662,6 +662,12 @@ fn (mut ctx Context) set_scale() {
 // window_size returns the current dimensions of the window.
 pub fn (ctx Context) window_size() Size {
 	s := ctx.scale
+	$if windows {
+		if ctx.native_rendering {
+			w, h := win32_get_window_size(ctx.win32.hwnd)
+			return Size{w, h} // TODO
+		}
+	}
 	return Size{int(sapp.width() / s), int(sapp.height() / s)}
 }
 
