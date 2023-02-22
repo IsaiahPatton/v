@@ -7,6 +7,7 @@ import gx
 #include <stdio.h>
 #include <wingdi.h>
 #flag -lgdi32
+#flag -luser32
 #flag -I @VEXEROOT/thirdparty/win32
 #include "win32_api.c"
 
@@ -32,6 +33,9 @@ const (
 	wm_timer            = 275
 	wm_hscroll          = 276
 	wm_vscroll          = 277
+	wm_mousemove		= 512
+	vm_lbuttondown		= 513
+	vm_lbuttonup		= 514
 	ws_overlappedwindow = 13565952
 	gwlp_userdata       = -21
 )
@@ -92,6 +96,8 @@ fn C.CreateSolidBrush(color C.COLORREF) C.HBRUSH
 
 fn C.RGB(r int, g int, b int) C.COLORREF
 
+fn C.SetTextColor(hdc C.HDC, color C.COLORREF)
+
 fn C.FillRect(hdc C.HDC, rect &C.tagRECT, hbr C.HBRUSH)
 
 fn C.FrameRect(hdc C.HDC, rect &C.tagRECT, hbr C.HBRUSH)
@@ -130,11 +136,14 @@ fn C.my_scissor_rect(hdc C.HDC, x int, y int, w int, h int)
 
 fn C.fix_text_background(hdc C.HDC)
 
+fn C.draw_background(hwnd C.HWND, wp C.WPARAM)
+fn C.set_background(hwnd C.HWND)
+
 fn win32_scissor_rect(hdc C.HDC, x int, y int, w int, h int) {
 	C.my_scissor_rect(hdc, x, y, w, h)
 }
 
-fn win32_draw_tex(hdc C.HDC, text string, x int, y int) {
+fn win32_draw_text(hdc C.HDC, text string, x int, y int, c gx.Color) {
 	rect := &C.tagRECT{
 		top: y
 		left: x
@@ -143,6 +152,7 @@ fn win32_draw_tex(hdc C.HDC, text string, x int, y int) {
 	}
 
 	C.fix_text_background(hdc)
+	C.SetTextColor(hdc, C.RGB(c.r, c.g, c.b))
 	C.DrawText(hdc, text.to_wide(), -1, rect, 0)
 	//size := C.my_text_size(hdc, text.to_wide(), text.len)
 	//dump(size.cx)
@@ -168,6 +178,13 @@ fn main() {
 	win32_create_window(600, 300, 500, 400, 'My Program')
 	win32_run_message_loop()
 }
+
+fn C.WndProc_A(hwnd C.HWND, message u32, wParam C.WPARAM, lParam C.LPARAM) C.LRESULT
+fn C.WndProc_create(hwnd C.HWND, message u32, wParam C.WPARAM, lParam C.LPARAM)
+fn C.WndProc_pa(hwnd C.HWND, message u32, wParam C.WPARAM, lParam C.LPARAM)
+fn C.WndProc_pb(hwnd C.HWND, message u32, wParam C.WPARAM, lParam C.LPARAM)
+
+//LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 // Create a new Win32 Window
 fn win32_create_window(x int, y int, w int, h int, title string) &C.HWND {
@@ -234,18 +251,144 @@ fn win32_set_userdata(hwnd C.HWND, ctx &Context) &Win32Userdata {
 	return data
 }
 
+fn C.get_mouse_x(lp C.LPARAM) int
+fn C.get_mouse_y(lp C.LPARAM) int
+
+/**
+
+pub struct Event {
+pub mut:
+	frame_count        u64
+	typ                sapp.EventType
+	key_code           KeyCode
+	char_code          u32
+	key_repeat         bool
+	modifiers          u32
+	mouse_button       MouseButton
+	mouse_x            f32
+	mouse_y            f32
+	mouse_dx           f32
+	mouse_dy           f32
+	scroll_x           f32
+	scroll_y           f32
+	num_touches        int
+	touches            [8]TouchPoint
+	window_width       int
+	window_height      int
+	framebuffer_width  int
+	framebuffer_height int
+}
+
+ */
+ 
+ fn C.GetDC(hwnd C.HWND) C.HDC
+ fn C.CreateCompatibleDC(hdc C.HDC) C.HDC
+ fn C.CreateCompatibleBitmap(hdc C.HDC, cx int, cy int) C.HBITMAP
+ fn C.ReleaseDC(hwnd C.HWND, hdc C.HDC) 
+ fn C.BitBlt(hdc C.HDC, x int, y int, cx int, cy int, hdcsrc C.HDC, x1 int, y1 int, rop C.DWORD)
+ fn C.bit_blt(hdc C.HDC, ps C.PAINTSTRUCT, hbufferdc C.HDC) 
+ 
+ struct C.PAINTSTRUCT{
+ }
+
+fn C.get_ps() C.PAINTSTRUCT
+ 
+ fn C.hdcc() C.HDC
+  fn C.set_hdcc(h C.HDC)
+ 
+ __global (
+	 //hdcc = n_h()
+	 hbufferdc =n_h()
+ )
+ 
+ 
+ fn n_h() C.HDC {
+	return C.HDC(0)
+ }
+
+ 
 // Win32 Window Events
 fn my_wnd_proc(hwnd C.HWND, message u32, wParam C.WPARAM, lParam C.LPARAM) C.LRESULT {
-	
+
 	mut dat := C.GetWindowLongPtr(hwnd, gwlp_userdata)
 	//dump(dat)
+	
+	//static HBITMAP hBuffer;
+    //static HDC hDC;
+
+	 if message == 20 {
+            // Draw the background using the background brush
+            C.draw_background(hwnd, wParam)
+            return C.LRESULT(1)
+        }
 
 	if message == wm_ncmousemove {
 		return C.LRESULT(0)
 	}
+	
+	if message == wm_size {
+		return C.WndProc_A(hwnd, message, wParam, lParam)
+	}
+	
+	if message == wm_mousemove {
+		//C.InvalidateRect(hwnd, C.NULL, C.TRUE)
+		mx := C.get_mouse_x(lParam)
+		my := C.get_mouse_y(lParam)
+
+		mut ev := &Event{
+			typ: .mouse_move
+			mouse_x: mx
+			mouse_y: my
+			mouse_button: .left
+		}
+		
+		if dat != unsafe { nil } {
+			mut mydat := unsafe { &Win32Userdata(voidptr(dat)) }
+			gg_event_fn_(ev, mydat.ctx)
+		}
+		return C.LRESULT(0)
+	}
+	
+	if message == vm_lbuttondown {
+		mx := C.get_mouse_x(lParam)
+		my := C.get_mouse_y(lParam)
+
+		mut ev := &Event{
+			typ: .mouse_down
+			mouse_x: mx
+			mouse_y: my
+			mouse_button: .left
+		}
+		
+		if dat != unsafe { nil } {
+			mut mydat := unsafe { &Win32Userdata(voidptr(dat)) }
+			gg_event_fn_(ev, mydat.ctx)
+		}
+		return C.LRESULT(0)
+	}
+
+	if message == vm_lbuttonup {
+		mx := C.get_mouse_x(lParam)
+		my := C.get_mouse_y(lParam)
+
+		mut ev := &Event{
+			typ: .mouse_up
+			mouse_x: mx
+			mouse_y: my
+			mouse_button: .left
+		}
+		
+		if dat != unsafe { nil } {
+			mut mydat := unsafe { &Win32Userdata(voidptr(dat)) }
+			gg_event_fn_(ev, mydat.ctx)
+		}
+		return C.LRESULT(0)
+	}
 
 	if message == wm_create {
-		target_fps := 1 // 20
+		C.WndProc_create(hwnd, message, wParam, lParam)
+		C.set_background(hwnd)
+		target_fps := 80
 		C.SetTimer(hwnd, 1, (1000 / target_fps), C.NULL)
 		return C.LRESULT(0)
 	}
@@ -269,22 +412,27 @@ fn my_wnd_proc(hwnd C.HWND, message u32, wParam C.WPARAM, lParam C.LPARAM) C.LRE
 	}
 
 	if message == wm_paint {
-		mut ps := unsafe { nil }
-		hdc := C.BeginPaint(hwnd, &ps)
-		
-		if dat != unsafe { nil } {
-			mut mydat := unsafe { &Win32Userdata(voidptr(dat)) }
-			mydat.hdc = hdc
-			gg_frame_fn(mut mydat.ctx)
-		} else {
-		}
+			C.WndProc_pa(hwnd, message, wParam, lParam)
 
-		C.EndPaint(hwnd, &ps)
-		return C.LRESULT(0)
+			if dat != unsafe { nil } {
+				mut mydat := unsafe { &Win32Userdata(voidptr(dat)) }
+				mydat.hdc = C.get_bufferdc() //hbufferdc
+				gg_frame_fn(mut mydat.ctx)
+			} else {
+			
+			}
+			C.WndProc_pb(hwnd, message, wParam, lParam)
+		return C.LRESULT(1)
 	}
 
 	return C.DefWindowProc(hwnd, message, wParam, lParam)
 }
+
+fn C.win32_set_bg(r int, g int, b int)
+
+fn C.get_bufferdc() C.HDC
+
+fn C.do_paint(hwnd C.HWND, hbufferdc C.HDC) C.HDC
 
 // Draw rect filled
 fn win32_draw_rect_filled(hdc C.HDC, x f32, y f32, w f32, h f32, c gx.Color) {
@@ -322,5 +470,117 @@ fn win32_draw_pixels(hdc C.HDC, points []f32, c gx.Color) {
 	for i in 0 .. (points.len / 2) {
 		x, y := points[i * 2], points[i * 2 + 1]
 		win32_draw_pixel(hdc, x, y, c)
+	}
+}
+
+
+
+fn gg_event_fn_(ce voidptr, user_data voidptr) {
+	// e := unsafe { &sapp.Event(ce) }
+	mut e := unsafe { &Event(ce) }
+	mut ctx := unsafe { &Context(user_data) }
+	if ctx.ui_mode {
+		ctx.refresh_ui()
+	}
+	if e.typ == .mouse_down {
+		bitplace := int(e.mouse_button)
+		ctx.mbtn_mask |= u8(1 << bitplace)
+		ctx.mouse_buttons = unsafe { MouseButtons(ctx.mbtn_mask) }
+	}
+	if e.typ == .mouse_up {
+		bitplace := int(e.mouse_button)
+		ctx.mbtn_mask &= ~(u8(1 << bitplace))
+		ctx.mouse_buttons = unsafe { MouseButtons(ctx.mbtn_mask) }
+	}
+	if e.typ == .mouse_move && e.mouse_button == .invalid {
+		if ctx.mbtn_mask & 0x01 > 0 {
+			e.mouse_button = .left
+		}
+		if ctx.mbtn_mask & 0x02 > 0 {
+			e.mouse_button = .right
+		}
+		if ctx.mbtn_mask & 0x04 > 0 {
+			e.mouse_button = .middle
+		}
+	}
+	ctx.mouse_pos_x = int(e.mouse_x / ctx.scale)
+	ctx.mouse_pos_y = int(e.mouse_y / ctx.scale)
+	ctx.mouse_dx = int(e.mouse_dx / ctx.scale)
+	ctx.mouse_dy = int(e.mouse_dy / ctx.scale)
+	ctx.scroll_x = int(e.scroll_x / ctx.scale)
+	ctx.scroll_y = int(e.scroll_y / ctx.scale)
+	ctx.key_modifiers = unsafe { Modifier(e.modifiers) }
+	ctx.key_repeat = e.key_repeat
+	if e.typ in [.key_down, .key_up] {
+		key_idx := int(e.key_code) % key_code_max
+		prev := ctx.pressed_keys[key_idx]
+		next := e.typ == .key_down
+		ctx.pressed_keys[key_idx] = next
+		ctx.pressed_keys_edge[key_idx] = prev != next
+	}
+	if ctx.config.event_fn != unsafe { nil } {
+		ctx.config.event_fn(e, ctx.config.user_data)
+	}
+	match e.typ {
+		.mouse_move {
+			if ctx.config.move_fn != unsafe { nil } {
+				ctx.config.move_fn(e.mouse_x / ctx.scale, e.mouse_y / ctx.scale, ctx.config.user_data)
+			}
+		}
+		.mouse_down {
+			if ctx.config.click_fn != unsafe { nil } {
+				ctx.config.click_fn(e.mouse_x / ctx.scale, e.mouse_y / ctx.scale, e.mouse_button,
+					ctx.config.user_data)
+			}
+		}
+		.mouse_up {
+			if ctx.config.unclick_fn != unsafe { nil } {
+				ctx.config.unclick_fn(e.mouse_x / ctx.scale, e.mouse_y / ctx.scale, e.mouse_button,
+					ctx.config.user_data)
+			}
+		}
+		.mouse_leave {
+			if ctx.config.leave_fn != unsafe { nil } {
+				ctx.config.leave_fn(e, ctx.config.user_data)
+			}
+		}
+		.mouse_enter {
+			if ctx.config.enter_fn != unsafe { nil } {
+				ctx.config.enter_fn(e, ctx.config.user_data)
+			}
+		}
+		.mouse_scroll {
+			if ctx.config.scroll_fn != unsafe { nil } {
+				ctx.config.scroll_fn(e, ctx.config.user_data)
+			}
+		}
+		.key_down {
+			if ctx.config.keydown_fn != unsafe { nil } {
+				ctx.config.keydown_fn(e.key_code, unsafe { Modifier(e.modifiers) }, ctx.config.user_data)
+			}
+		}
+		.key_up {
+			if ctx.config.keyup_fn != unsafe { nil } {
+				ctx.config.keyup_fn(e.key_code, unsafe { Modifier(e.modifiers) }, ctx.config.user_data)
+			}
+		}
+		.char {
+			if ctx.config.char_fn != unsafe { nil } {
+				ctx.config.char_fn(e.char_code, ctx.config.user_data)
+			}
+		}
+		.resized {
+			if ctx.config.resized_fn != unsafe { nil } {
+				ctx.config.resized_fn(e, ctx.config.user_data)
+			}
+		}
+		.quit_requested {
+			if ctx.config.quit_fn != unsafe { nil } {
+				ctx.config.quit_fn(e, ctx.config.user_data)
+			}
+		}
+		else {
+			// dump(e)
+		}
 	}
 }

@@ -174,9 +174,7 @@ pub fn (ctx &Context) draw_text(x int, y int, text_ string, cfg gx.TextCfg) {
 	}
 	$if windows {
 		if ctx.native_rendering {
-			win32_draw_tex(ctx.win32.hdc, text_, x, y)
-		
-			//ctx.draw_rect_filled(x, y, text_.len, 20, cfg.color)
+			win32_draw_text(ctx.win32.hdc, text_, x, y, cfg.color)
 			return // TODO
 		}
 	}

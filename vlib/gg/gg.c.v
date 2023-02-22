@@ -526,6 +526,12 @@ pub fn (ctx &Context) quit() {
 
 // set_bg_color sets the color of the window background to `c`.
 pub fn (mut ctx Context) set_bg_color(c gx.Color) {
+	$if windows {
+		if ctx.native_rendering {
+			C.win32_set_bg(c.r, c.g, c.b)
+			return
+		}
+	}
 	ctx.clear_pass = gfx.create_clear_pass(f32(c.r) / 255.0, f32(c.g) / 255.0, f32(c.b) / 255.0,
 		f32(c.a) / 255.0)
 }
