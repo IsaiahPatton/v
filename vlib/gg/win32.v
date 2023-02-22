@@ -40,7 +40,7 @@ const (
 	gwlp_userdata       = -21
 )
 
-struct WndClassEx {
+struct Win32WndClass {
 	cb_size        u32
 	style          u32
 	lpfn_wnd_proc  voidptr
@@ -69,7 +69,7 @@ struct C.tagSIZE {
 	cy f32
 }
 
-fn C.RegisterClassEx(class &WndClassEx) int
+fn C.RegisterClassEx_(class &Win32WndClass) int
 
 fn C.CreateWindowEx(dwExStyle i64, lpClassName &u16, lpWindowName &u16, dwStyle i64, x int, y int, nWidth int, nHeight int, hWndParent i64, hMenu voidptr, h_instance voidptr, lpParam voidptr) &C.HWND
 
@@ -139,6 +139,10 @@ fn C.fix_text_background(hdc C.HDC)
 fn C.draw_background(hwnd C.HWND, wp C.WPARAM)
 fn C.set_background(hwnd C.HWND)
 
+fn C.is_native_win32_ui() bool
+fn C.win32_width() int
+fn C.win32_height() int
+
 fn win32_scissor_rect(hdc C.HDC, x int, y int, w int, h int) {
 	C.my_scissor_rect(hdc, x, y, w, h)
 }
@@ -189,8 +193,8 @@ fn C.WndProc_pb(hwnd C.HWND, message u32, wParam C.WPARAM, lParam C.LPARAM)
 // Create a new Win32 Window
 fn win32_create_window(x int, y int, w int, h int, title string) &C.HWND {
 	cw := (C.COLOR_WINDOW + 1)
-	wndclass := WndClassEx{
-		cb_size: sizeof(WndClassEx)
+	wndclass := Win32WndClass{
+		cb_size: sizeof(Win32WndClass)
 		lpfn_wnd_proc: my_wnd_proc
 		lpsz_class_name: title.to_wide()
 		lpsz_menu_name: 0
@@ -198,7 +202,7 @@ fn win32_create_window(x int, y int, w int, h int, title string) &C.HWND {
 		style: cs_hredraw + cs_vredraw
 		hbr_background: C.HBRUSH(cw)
 	}
-	if C.RegisterClassEx(&wndclass) == 0 && C.GetLastError() != u32(C.ERROR_CLASS_ALREADY_EXISTS) {
+	if C.RegisterClassEx_(&wndclass) == 0 && C.GetLastError() != u32(C.ERROR_CLASS_ALREADY_EXISTS) {
 		println('Failed registering class.')
 	}
 
@@ -296,16 +300,6 @@ fn C.get_ps() C.PAINTSTRUCT
  fn C.hdcc() C.HDC
   fn C.set_hdcc(h C.HDC)
  
- __global (
-	 //hdcc = n_h()
-	 hbufferdc =n_h()
- )
- 
- 
- fn n_h() C.HDC {
-	return C.HDC(0)
- }
-
  
 // Win32 Window Events
 fn my_wnd_proc(hwnd C.HWND, message u32, wParam C.WPARAM, lParam C.LPARAM) C.LRESULT {
@@ -318,13 +312,9 @@ fn my_wnd_proc(hwnd C.HWND, message u32, wParam C.WPARAM, lParam C.LPARAM) C.LRE
 
 	 if message == 20 {
             // Draw the background using the background brush
-            C.draw_background(hwnd, wParam)
+    //        C.draw_background(hwnd, wParam)
             return C.LRESULT(1)
         }
-
-	if message == wm_ncmousemove {
-		return C.LRESULT(0)
-	}
 	
 	if message == wm_size {
 		return C.WndProc_A(hwnd, message, wParam, lParam)
@@ -388,7 +378,7 @@ fn my_wnd_proc(hwnd C.HWND, message u32, wParam C.WPARAM, lParam C.LPARAM) C.LRE
 	if message == wm_create {
 		C.WndProc_create(hwnd, message, wParam, lParam)
 		C.set_background(hwnd)
-		target_fps := 80
+		target_fps := 60
 		C.SetTimer(hwnd, 1, (1000 / target_fps), C.NULL)
 		return C.LRESULT(0)
 	}
@@ -465,6 +455,11 @@ fn win32_draw_pixel(hdc C.HDC, x f32, y f32, c gx.Color) {
 	win32_draw_rect_filled(hdc, x, y, 1, 1, c)
 }
 
+// Draw line
+fn win32_draw_line(hdc C.HDC, a f32, b f32, c f32, d f32) {
+	C.win32_draw_line(hdc, int(a), int(b), int(c), int(d))
+}
+
 // Draw pixels
 fn win32_draw_pixels(hdc C.HDC, points []f32, c gx.Color) {
 	for i in 0 .. (points.len / 2) {
@@ -473,7 +468,7 @@ fn win32_draw_pixels(hdc C.HDC, points []f32, c gx.Color) {
 	}
 }
 
-
+fn C.win32_draw_line(hdc C.HDC, a int, b int, c int, d int)
 
 fn gg_event_fn_(ce voidptr, user_data voidptr) {
 	// e := unsafe { &sapp.Event(ce) }

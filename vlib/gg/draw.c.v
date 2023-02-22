@@ -65,7 +65,7 @@ pub fn (ctx &Context) draw_pixels(points []f32, c gx.Color) {
 
 // draw_line draws a line between the points `x,y` and `x2,y2` in color `c`.
 pub fn (ctx &Context) draw_line(x f32, y f32, x2 f32, y2 f32, c gx.Color) {
-	$if macos || windows {
+	$if macos {
 		if ctx.native_rendering {
 			// Make the line more clear on hi dpi screens: draw a rectangle
 			mut width := math.abs(x2 - x)
@@ -76,6 +76,13 @@ pub fn (ctx &Context) draw_line(x f32, y f32, x2 f32, y2 f32, c gx.Color) {
 				height = 1
 			}
 			ctx.draw_rect_filled(x, y, f32(width), f32(height), c)
+			return
+		}
+	}
+	
+	$if windows {
+		if ctx.native_rendering {
+			win32_draw_line(ctx.win32.hdc, x, y, x2, y2)
 			return
 		}
 	}

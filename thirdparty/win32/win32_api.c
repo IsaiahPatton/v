@@ -102,17 +102,43 @@ HDC do_paint(HWND hwnd, HDC hbufferdc) {
 	return hdcc;
 }
 
+int RegisterClassEx_(WNDCLASS* claz) {
+	return RegisterClassEx(claz);
+}
+
 void bit_blt(HDC hdcc, PAINTSTRUCT ps, HDC hBufferDC) {
 	BitBlt(hdcc, ps.rcPaint.left, ps.rcPaint.top, ps.rcPaint.right - ps.rcPaint.left,
                 ps.rcPaint.bottom - ps.rcPaint.top, hBufferDC, ps.rcPaint.left, ps.rcPaint.top, SRCCOPY);
 	
 }
 
-
 static HBITMAP hBuffer;
 static HDC hDC;
 static HDC hBufferDC;
 static COLORREF background = RGB(255, 255, 255);
+static is_win32_ui = false;
+static HWND hwnd;
+
+bool is_native_win32_ui() {
+	return is_win32_ui;
+}
+
+int win32_width() {
+	 RECT clientRect;
+     GetClientRect(hwnd, &clientRect);
+     int width = clientRect.right - clientRect.left;
+     int height = clientRect.bottom - clientRect.top;
+	 return width;
+}
+
+int win32_height() {
+	 RECT clientRect;
+     GetClientRect(hwnd, &clientRect);
+     int width = clientRect.right - clientRect.left;
+     int height = clientRect.bottom - clientRect.top;
+	 return height;
+}
+
 
 LRESULT CALLBACK WndProc_A(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
@@ -139,6 +165,8 @@ LRESULT CALLBACK WndProc_A(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 }
 
 void WndProc_create(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
+	is_win32_ui = true;
+	hwnd = hWnd;
 	hDC = GetDC(hWnd);
             hBufferDC = CreateCompatibleDC(hDC);
             hBuffer = CreateCompatibleBitmap(hDC, 640, 480);
@@ -166,4 +194,9 @@ void WndProc_pb(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
 
 void win32_set_bg(int r, int g, int b) {
 	background = RGB(r, g, b);
+}
+
+void win32_draw_line(HDC hdc, int a, int b, int c, int d) {
+	MoveToEx(hdc, a, b, NULL);
+	LineTo(hdc, c, d);
 }

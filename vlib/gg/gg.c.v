@@ -671,7 +671,7 @@ pub fn (ctx Context) window_size() Size {
 	$if windows {
 		if ctx.native_rendering {
 			w, h := win32_get_window_size(ctx.win32.hwnd)
-			return Size{w, h} // TODO
+			return Size{w, h}
 		}
 	}
 	return Size{int(sapp.width() / s), int(sapp.height() / s)}
@@ -718,6 +718,12 @@ pub fn screen_size() Size {
 // Do not use for Android development, use `Context.window_size()` instead.
 pub fn window_size() Size {
 	s := dpi_scale()
+	$if windows {
+		if C.is_native_win32_ui() {
+			dump('A')
+			return Size{C.win32_width(), C.win32_height()}
+		}
+	}
 	return Size{int(sapp.width() / s), int(sapp.height() / s)}
 }
 
