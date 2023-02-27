@@ -720,7 +720,6 @@ pub fn window_size() Size {
 	s := dpi_scale()
 	$if windows {
 		if C.is_native_win32_ui() {
-			dump('A')
 			return Size{C.win32_width(), C.win32_height()}
 		}
 	}

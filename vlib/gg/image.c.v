@@ -21,6 +21,7 @@ pub mut:
 	ext         string
 	simg_ok     bool
 	simg        gfx.Image
+	wimg        &WImg = unsafe { nil }
 	path        string
 }
 
@@ -68,6 +69,15 @@ pub fn (ctx &Context) create_image(file string) Image {
 	unsafe {
 		ctx.image_cache << img
 	}
+
+	$if windows {
+		if ctx.native_rendering {
+			img.wimg = &WImg{C.CreateBitmapFromPixels(ctx.win32.hdc, img.width, img.height,
+				img.data)}
+			return img
+		}
+	}
+
 	return img
 }
 
@@ -212,6 +222,7 @@ fn create_image(file string) Image {
 		ext: stb_img.ext
 		path: file
 	}
+
 	img.init_sokol_image()
 	return img
 }
@@ -231,6 +242,15 @@ pub fn (mut ctx Context) create_image_from_memory(buf &u8, bufsize int) Image {
 		ext: stb_img.ext
 		id: ctx.image_cache.len
 	}
+
+	$if windows {
+		if ctx.native_rendering {
+			// img.wimg = &WImg{
+			//	C.CreateBitmapFromPixels(ctx.win32.hdc, stb_img.width, stb_img.height, stb_img.data)
+			//}
+		}
+	}
+
 	ctx.image_cache << img
 	return img
 }
@@ -256,6 +276,28 @@ pub struct StreamingImageConfig {
 // draw_image_with_config takes in a config that details how the
 // provided image should be drawn onto the screen
 pub fn (ctx &Context) draw_image_with_config(config DrawImageConfig) {
+	$if windows {
+		if ctx.native_rendering {
+			x := config.img_rect.x
+			y := config.img_rect.y
+			w := config.img_rect.width
+			h := config.img_rect.height
+
+			mut img := config.img
+			if config.img == unsafe { nil } {
+				img = &ctx.image_cache[config.img_id]
+			}
+
+			if img.wimg == unsafe { nil } {
+				img.wimg = &WImg{C.CreateBitmapFromPixels(ctx.win32.hdc, img.width, img.height,
+					img.data)}
+			}
+
+			C.PaintImage(ctx.win32.hdc, img.wimg.m, x, y, w, h)
+			return
+		}
+	}
+
 	$if macos {
 		unsafe {
 			mut img := config.img

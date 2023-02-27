@@ -8,6 +8,7 @@ import gx
 #include <wingdi.h>
 #flag -lgdi32
 #flag -luser32
+#flag -lmsimg32
 #flag -I @VEXEROOT/thirdparty/win32
 #include "win32_api.c"
 
@@ -301,6 +302,17 @@ fn C.get_ps() C.PAINTSTRUCT
   fn C.set_hdcc(h C.HDC)
  
  
+ struct WImg {
+	m C.HBITMAP
+ }
+ 
+ fn C.CreateBitmapFromPixels(hdc C.HDC, width int, height int, pixels voidptr) C.HBITMAP
+ fn C.PaintImage(hdc C.HDC, hbm C.HBITMAP, x int, y int, w int, h int)
+ // void PaintImage(HDC hdc, HBITMAP hbm, int x, int y) {
+ 
+ fn C.im(hdc C.HDC, x int, y int, w int, h int, voidptr data) C.HDC
+ fn C.imd(hdc C.HDC, x int, y int, w int, h int, voidptr data)
+ // void im(HDC hdc, int width, int height, char* image_data) {
 // Win32 Window Events
 fn my_wnd_proc(hwnd C.HWND, message u32, wParam C.WPARAM, lParam C.LPARAM) C.LRESULT {
 
