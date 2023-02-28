@@ -10,15 +10,28 @@ HFONT my_create_font() {
                 OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH, "Arial");
 }
 
+
+
+void stf() {
+	
+}
+
+void set_font(HWND hwnd) {
+	HFONT hFont = my_create_font();
+	SendMessage(hwnd, WM_SETFONT, (WPARAM)hFont , TRUE);
+}
+
 SIZE my_text_size(HDC hdc, char* text, int textLength) {
 	SIZE size;
 
 	// select a font into the device context
-	// HFONT hFont = my_create_font();
-	// SelectObject(hdc, hFont);
+	HFONT hFont = my_create_font();
+	SelectObject(hdc, hFont);
 
 	// get the size of the text
 	GetTextExtentPoint32(hdc, text, textLength, &size);
+	
+	DeleteObject(hFont);
 
 	// the width and height of the text are in the size structure
 	int width = size.cx;
@@ -81,13 +94,14 @@ void set_background(HWND hWnd) {
 static HBITMAP hBuffer;
 // static HDC hdcc;
 static HDC hBufferDC;
+static HDC mhdc;
 
 HDC get_bufferdc() {
 	return hBufferDC;
 }
 
-HDC hdcc() {
-	return hdcc;
+HDC myhdc() {
+	return mhdc;
 }
 
 void set_hdcc(HDC h) {
@@ -103,7 +117,8 @@ void bit_blt(HDC hdcc, PAINTSTRUCT ps, HDC hBufferDC) {
 HDC do_paint(HWND hwnd, HDC hbufferdc) {
 	PAINTSTRUCT ps;
 	HDC hdcc = BeginPaint(hwnd, &ps);
-	bit_blt(hdcc, ps, hbufferdc);
+	mhdc = hdcc;
+	//bit_blt(hdcc, ps, hbufferdc);
 	EndPaint(hwnd, &ps);
 	return hdcc;
 }
@@ -164,6 +179,7 @@ LRESULT CALLBACK WndProc_A(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 void WndProc_create(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
 	is_win32_ui = true;
 	hwnd = hWnd;
+	set_font(hWnd);
 	hDC = GetDC(hWnd);
             hBufferDC = CreateCompatibleDC(hDC);
             hBuffer = CreateCompatibleBitmap(hDC, 640, 480);
@@ -172,21 +188,22 @@ void WndProc_create(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
 }
 
 void WndProc_pa(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
-	        RECT rc;
-            GetClientRect(hWnd, &rc);
-            HBRUSH hBrush = CreateSolidBrush(background);
-            FillRect(hBufferDC, &rc, hBrush);
-            DeleteObject(hBrush);
+	RECT rc;
+	GetClientRect(hWnd, &rc);
+	HBRUSH hBrush = CreateSolidBrush(background);
+	FillRect(hBufferDC, &rc, hBrush);
+	DeleteObject(hBrush);
 }
 
 void WndProc_pb(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
 	 // Copy the memory buffer to the screen
-            PAINTSTRUCT ps;
-            hDC = BeginPaint(hWnd, &ps);
-            BitBlt(hDC, ps.rcPaint.left, ps.rcPaint.top, ps.rcPaint.right - ps.rcPaint.left,
-                ps.rcPaint.bottom - ps.rcPaint.top, hBufferDC, ps.rcPaint.left, ps.rcPaint.top, SRCCOPY);
-            EndPaint(hWnd, &ps);
-            return 0;
+	PAINTSTRUCT ps;
+	hDC = BeginPaint(hWnd, &ps);
+
+	BitBlt(hDC, ps.rcPaint.left, ps.rcPaint.top, ps.rcPaint.right - ps.rcPaint.left,
+		ps.rcPaint.bottom - ps.rcPaint.top, hBufferDC, ps.rcPaint.left, ps.rcPaint.top, SRCCOPY);
+	EndPaint(hWnd, &ps);
+	return 0;
 }
 
 void win32_set_bg(int r, int g, int b) {
@@ -196,18 +213,6 @@ void win32_set_bg(int r, int g, int b) {
 void win32_draw_line(HDC hdc, int a, int b, int c, int d) {
 	MoveToEx(hdc, a, b, NULL);
 	LineTo(hdc, c, d);
-}
-
-
-HDC im(HDC hdc, int x, int y, int width, int height, unsigned char* image_data) {
-	
-	
-	//ConvertBGRToRGB(image_data, width, height, 4);
-
-
-//return image_data
-return hdc;
-
 }
 
 void ConvertBGRToRGB(unsigned char* data, int width, int height, int bytesPerPixel) {
@@ -254,7 +259,38 @@ void PaintImage(HDC hdc, HBITMAP hbm, int x, int y, int w, int h) {
     DeleteDC(hdcMem);
 }
 
-imd(HDC hdc, int x, int y, int width, int height, unsigned char* image_data) {
-	HBITMAP map = CreateBitmapFromPixels(hdc, width, height, image_data);
-	PaintImage(hdc, map, x, y, width, height);
+
+void win32_draw_triangle(HDC hdc, int x1, int y1, int x2, int y2, int x3, int y3, int r, int g, int b) {
+	HPEN hPen = CreatePen(PS_SOLID, 1, RGB(r, g, b)); 
+	HPEN hOldPen = SelectPen(hdc, hPen);
+	HBRUSH hBrush = CreateSolidBrush(RGB(r, g, b)); 
+	HBRUSH hOldBrush = SelectBrush(hdc, hBrush); 
+	POINT vertices[] = {{x1, y1}, {x2, y2}, {x3, y3}}; // define an array of points
+	Polygon(hdc, vertices, 3);
+	SelectPen(hdc, hOldPen); 
+	SelectBrush(hdc, hOldBrush);
+	DeleteObject(hPen);
+	DeleteObject(hBrush);
+}
+
+
+void draw_rect_filled_alpha(HDC hdc, int x, int y, int width, int height, COLORREF rgb, int alpha) {
+    HDC hdcMem = CreateCompatibleDC(hdc);
+    HBITMAP hBitmap = CreateCompatibleBitmap(hdc, width, height);
+
+    SelectObject(hdcMem, hBitmap);
+
+    HBRUSH hBrush = CreateSolidBrush(rgb);
+	
+	RECT rec = {0, 0, width, height};
+	FillRect(hdcMem, &rec, hBrush);
+	
+    DeleteObject(hBrush);
+
+    // Use the AlphaBlend function to draw the bitmap onto the DC of the window
+    BLENDFUNCTION blendFunc = { AC_SRC_OVER, 0, alpha, 0 };
+    AlphaBlend(hdc, x, y, width, height, hdcMem, 0, 0, width, height, blendFunc);
+
+    DeleteObject(hBitmap);
+    DeleteDC(hdcMem);
 }

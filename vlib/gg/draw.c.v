@@ -533,7 +533,7 @@ pub fn (ctx &Context) draw_triangle_empty(x f32, y f32, x2 f32, y2 f32, x3 f32, 
 pub fn (ctx &Context) draw_triangle_filled(x f32, y f32, x2 f32, y2 f32, x3 f32, y3 f32, c gx.Color) {
 	$if windows {
 		if ctx.native_rendering {
-			// TODO
+			C.win32_draw_triangle(ctx.win32.hdc, int(x), int(y), int(x2), int(y2), int(x3), int(y3), c.r, c.g, c.b)
 			return
 		}
 	}

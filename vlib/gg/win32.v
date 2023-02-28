@@ -107,7 +107,7 @@ fn C.InvalidateRect(hwnd C.HWND, rect &C.tagRECT, berase bool)
 
 fn C.SetTimer(hwnd C.HWND, id u32, ela u32, C.TIMERPROC)
 
-fn C.DeleteObject(obj C.HBRUSH)
+fn C.DeleteObject(obj C.HGDIOBJ)
 
 fn C.GetWindowLongPtr(hwnd C.HWND, index int) C.LONG_PTR
 
@@ -117,19 +117,7 @@ fn C.GetClientRect(hwnd C.HWND, lprect &C.tagRECT)
 
 fn C.my_text_size(hdc C.HDC, lpchtext &u16, le int) C.tagSIZE
 
-/*
-int DrawTextA(
-  [in]      HDC    hdc,
-  [in, out] LPCSTR lpchText,
-  [in]      int    cchText,
-  [in, out] LPRECT lprc,
-  [in]      UINT   format
-);
-*/
-
 fn C.DrawText(hdc C.HDC, lpchtext &u16, cch int, rect &C.tagRECT, format u32)
-
-fn C.my_draw_text(hdc C.HDC, rect &C.tagRECT)
 
 fn C.SelectObject(hdc C.HDC, h C.HGDIOBJ)
 
@@ -143,6 +131,10 @@ fn C.set_background(hwnd C.HWND)
 fn C.is_native_win32_ui() bool
 fn C.win32_width() int
 fn C.win32_height() int
+
+fn C.win32_draw_triangle(hdc C.HDC, x int, y int, x2 int, y2 int, x3 int, y3 int, r int, g int, b int)
+
+fn C.my_create_font() C.HFONT
 
 fn win32_scissor_rect(hdc C.HDC, x int, y int, w int, h int) {
 	C.my_scissor_rect(hdc, x, y, w, h)
@@ -159,9 +151,6 @@ fn win32_draw_text(hdc C.HDC, text string, x int, y int, c gx.Color) {
 	C.fix_text_background(hdc)
 	C.SetTextColor(hdc, C.RGB(c.r, c.g, c.b))
 	C.DrawText(hdc, text.to_wide(), -1, rect, 0)
-	//size := C.my_text_size(hdc, text.to_wide(), text.len)
-	//dump(size.cx)
-	//win32_draw_rect_empty(hdc, x, y, size.cx, size.cy, gx.blue)
 }
 
 fn win32_text_size(hdc C.HDC, text string) (f32, f32) {
@@ -177,11 +166,6 @@ fn win32_get_window_size(hwnd C.HWND) (int, int) {
 	rect := &C.tagRECT{}
 	C.GetClientRect(hwnd, rect)
 	return int(rect.right - rect.left), int(rect.bottom - rect.top)
-}
-
-fn main() {
-	win32_create_window(600, 300, 500, 400, 'My Program')
-	win32_run_message_loop()
 }
 
 fn C.WndProc_A(hwnd C.HWND, message u32, wParam C.WPARAM, lParam C.LPARAM) C.LRESULT
@@ -306,13 +290,9 @@ fn C.get_ps() C.PAINTSTRUCT
 	m C.HBITMAP
  }
  
- fn C.CreateBitmapFromPixels(hdc C.HDC, width int, height int, pixels voidptr) C.HBITMAP
- fn C.PaintImage(hdc C.HDC, hbm C.HBITMAP, x int, y int, w int, h int)
- // void PaintImage(HDC hdc, HBITMAP hbm, int x, int y) {
- 
- fn C.im(hdc C.HDC, x int, y int, w int, h int, voidptr data) C.HDC
- fn C.imd(hdc C.HDC, x int, y int, w int, h int, voidptr data)
- // void im(HDC hdc, int width, int height, char* image_data) {
+fn C.CreateBitmapFromPixels(hdc C.HDC, width int, height int, pixels voidptr) C.HBITMAP
+fn C.PaintImage(hdc C.HDC, hbm C.HBITMAP, x int, y int, w int, h int)
+
 // Win32 Window Events
 fn my_wnd_proc(hwnd C.HWND, message u32, wParam C.WPARAM, lParam C.LPARAM) C.LRESULT {
 
@@ -415,14 +395,16 @@ fn my_wnd_proc(hwnd C.HWND, message u32, wParam C.WPARAM, lParam C.LPARAM) C.LRE
 
 	if message == wm_paint {
 			C.WndProc_pa(hwnd, message, wParam, lParam)
-
+			
+			hfont := C.my_create_font()
 			if dat != unsafe { nil } {
 				mut mydat := unsafe { &Win32Userdata(voidptr(dat)) }
 				mydat.hdc = C.get_bufferdc() //hbufferdc
+				C.SelectObject(mydat.hdc, C.HGDIOBJ(hfont))
 				gg_frame_fn(mut mydat.ctx)
 			} else {
-			
 			}
+			C.DeleteObject(C.HGDIOBJ(hfont))
 			C.WndProc_pb(hwnd, message, wParam, lParam)
 		return C.LRESULT(1)
 	}
@@ -438,10 +420,23 @@ fn C.do_paint(hwnd C.HWND, hbufferdc C.HDC) C.HDC
 
 // Draw rect filled
 fn win32_draw_rect_filled(hdc C.HDC, x f32, y f32, w f32, h f32, c gx.Color) {
-	hbrush := C.CreateSolidBrush(C.RGB(c.r, c.g, c.b))
-	rec := C.tagRECT{x, y, x + w, y + h}
-	C.FillRect(hdc, &rec, hbrush)
-	C.DeleteObject(hbrush)
+	if c.a == 255 {
+		hbrush := C.CreateSolidBrush(C.RGB(c.r, c.g, c.b))
+		rec := C.tagRECT{x, y, x + w, y + h}
+		C.FillRect(hdc, &rec, hbrush)
+		C.DeleteObject(C.HGDIOBJ(hbrush))
+		return
+	}
+	C.draw_rect_filled_alpha(hdc, int(x), int(y), int(w), int(h), C.RGB(c.r, c.g, c.b), c.a)
+}
+
+// void draw_rect(int x, int y, int w, int h, COLORREF color) {
+
+fn C.draw_rect_filled_alpha(hdc C.HDC, x int, y int, w int, h int, rgb C.COLORREF, alpha int)
+
+// Draw rect filled (using AlphaBlend)
+fn win32_draw_rect_filled_alpha(hdc C.HDC, x f32, y f32, w f32, h f32, c gx.Color) {
+	C.draw_rect_filled_alpha(hdc, int(x), int(y), int(w), int(h), C.RGB(c.r, c.g, c.b), c.a)
 }
 
 // Draw rect empty
@@ -449,7 +444,7 @@ fn win32_draw_rect_empty(hdc C.HDC, x f32, y f32, w f32, h f32, c gx.Color) {
 	hbrush := C.CreateSolidBrush(C.RGB(c.r, c.g, c.b))
 	rec := C.tagRECT{x, y, x + w, y + h}
 	C.FrameRect(hdc, &rec, hbrush)
-	C.DeleteObject(hbrush)
+	C.DeleteObject(C.HGDIOBJ(hbrush))
 }
 
 // Draw rounded rect empty

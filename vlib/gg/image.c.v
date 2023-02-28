@@ -84,6 +84,12 @@ pub fn (ctx &Context) create_image(file string) Image {
 // init_sokol_image initializes this `Image` for use with the
 // sokol graphical backend system.
 pub fn (mut img Image) init_sokol_image() &Image {
+	$if windows {
+		if C.is_native_win32_ui() {
+			return img
+		}
+	}
+
 	// println('\n init sokol image $img.path ok=$img.simg_ok')
 	mut img_desc := gfx.ImageDesc{
 		width: img.width
