@@ -159,6 +159,14 @@ pub fn (mut ctx Context) new_streaming_image(w int, h int, channels int, sicfg S
 		ptr: 0
 		size: usize(0)
 	}
+
+	$if windows {
+		if ctx.native_rendering {
+			img_idx := ctx.cache_image(img)
+			return img_idx
+		}
+	}
+
 	img.simg = gfx.make_image(&img_desc)
 	img.simg_ok = true
 	img.ok = true
@@ -169,6 +177,15 @@ pub fn (mut ctx Context) new_streaming_image(w int, h int, channels int, sicfg S
 // update_pixel_data is a helper for working with image streams (i.e. images,
 // that are updated dynamically by the CPU on each frame)
 pub fn (mut ctx Context) update_pixel_data(cached_image_idx int, buf &u8) {
+	$if windows {
+		if ctx.native_rendering {
+			mut img := ctx.get_cached_image_by_idx(cached_image_idx)
+			img.wimg = &WImg{C.CreateBitmapFromPixels(ctx.win32.hdc, img.width, img.height,
+				buf)}
+			return
+		}
+	}
+
 	mut image := ctx.get_cached_image_by_idx(cached_image_idx)
 	image.update_pixel_data(buf)
 }
@@ -295,6 +312,10 @@ pub fn (ctx &Context) draw_image_with_config(config DrawImageConfig) {
 			}
 
 			if img.wimg == unsafe { nil } {
+				if img.data == unsafe { nil } {
+					return
+				}
+
 				img.wimg = &WImg{C.CreateBitmapFromPixels(ctx.win32.hdc, img.width, img.height,
 					img.data)}
 			}

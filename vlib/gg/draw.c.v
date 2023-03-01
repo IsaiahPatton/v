@@ -79,7 +79,7 @@ pub fn (ctx &Context) draw_line(x f32, y f32, x2 f32, y2 f32, c gx.Color) {
 			return
 		}
 	}
-	
+
 	$if windows {
 		if ctx.native_rendering {
 			win32_draw_line(ctx.win32.hdc, x, y, x2, y2)
@@ -106,7 +106,6 @@ pub fn (ctx &Context) draw_line_with_config(x f32, y f32, x2 f32, y2 f32, config
 			return
 		}
 	}
-
 
 	if config.color.a != 255 {
 		sgl.load_pipeline(ctx.pipeline.alpha)
@@ -285,7 +284,7 @@ pub fn (ctx &Context) draw_rounded_rect_empty(x f32, y f32, w f32, h f32, radius
 	if w <= 0 || h <= 0 || radius < 0 {
 		return
 	}
-	
+
 	$if windows {
 		if ctx.native_rendering {
 			win32_draw_rounded_rect_empty(ctx.win32.hdc, x, y, w, h, radius, c)
@@ -511,7 +510,7 @@ pub fn (ctx &Context) draw_triangle_empty(x f32, y f32, x2 f32, y2 f32, x3 f32, 
 			return
 		}
 	}
-	
+
 	if c.a != 255 {
 		sgl.load_pipeline(ctx.pipeline.alpha)
 	}
@@ -533,11 +532,12 @@ pub fn (ctx &Context) draw_triangle_empty(x f32, y f32, x2 f32, y2 f32, x3 f32, 
 pub fn (ctx &Context) draw_triangle_filled(x f32, y f32, x2 f32, y2 f32, x3 f32, y3 f32, c gx.Color) {
 	$if windows {
 		if ctx.native_rendering {
-			C.win32_draw_triangle(ctx.win32.hdc, int(x), int(y), int(x2), int(y2), int(x3), int(y3), c.r, c.g, c.b)
+			C.win32_draw_triangle(ctx.win32.hdc, int(x), int(y), int(x2), int(y2), int(x3),
+				int(y3), c.r, c.g, c.b)
 			return
 		}
 	}
-	
+
 	if c.a != 255 {
 		sgl.load_pipeline(ctx.pipeline.alpha)
 	}
@@ -595,7 +595,7 @@ pub fn (ctx &Context) draw_circle_empty(x f32, y f32, radius f32, c gx.Color) {
 			return
 		}
 	}
-	
+
 	if c.a != 255 {
 		sgl.load_pipeline(ctx.pipeline.alpha)
 	}
@@ -644,7 +644,7 @@ pub fn (ctx &Context) draw_polygon_filled(x f32, y f32, size f32, edges int, rot
 	if edges <= 0 {
 		return
 	}
-	
+
 	$if windows {
 		if ctx.native_rendering {
 			// TODO
@@ -701,7 +701,7 @@ pub fn (ctx &Context) draw_circle_line(x f32, y f32, radius int, segments int, c
 			return
 		}
 	}
-	
+
 	$if windows {
 		if ctx.native_rendering {
 			// TODO
@@ -743,7 +743,7 @@ pub fn (ctx &Context) draw_slice_empty(x f32, y f32, radius f32, start_angle f32
 			return
 		}
 	}
-	
+
 	if c.a != 255 {
 		sgl.load_pipeline(ctx.pipeline.alpha)
 	}
@@ -840,7 +840,7 @@ pub fn (ctx Context) draw_arc_line(x f32, y f32, radius f32, start_angle f32, en
 		ctx.draw_pixel(xx, yy, c)
 		return
 	}
-	
+
 	$if windows {
 		if ctx.native_rendering {
 			// TODO
@@ -968,7 +968,7 @@ pub fn (ctx &Context) draw_arc_filled(x f32, y f32, inner_radius f32, thickness 
 		ctx.draw_arc_empty(x, y, inner_radius, thickness, start_angle, end_angle, 1, c)
 		return
 	}
-	
+
 	$if windows {
 		if ctx.native_rendering {
 			// TODO
@@ -1081,14 +1081,14 @@ pub fn (ctx &Context) draw_cubic_bezier_in_steps(points []f32, steps u32, c gx.C
 	if steps <= 0 || points.len != 8 {
 		return
 	}
-	
+
 	$if windows {
 		if ctx.native_rendering {
 			// TODO
 			return
 		}
 	}
-	
+
 	if c.a != 255 {
 		sgl.load_pipeline(ctx.pipeline.alpha)
 	}

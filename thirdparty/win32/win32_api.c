@@ -5,37 +5,27 @@
 #include <stdio.h>
 #include <wingdi.h>
 
-HFONT my_create_font() {
-	return CreateFont(16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, ANSI_CHARSET, 
-                OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH, "Arial");
+HFONT my_create_font(int size) {
+	return CreateFont(size, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, ANSI_CHARSET, 
+				OUT_DEFAULT_PRECIS, CLIP_DFA_DISABLE, DEFAULT_QUALITY, DEFAULT_PITCH, TEXT("Arial"));
 }
-
-
 
 void stf() {
-	
-}
-
-void set_font(HWND hwnd) {
-	HFONT hFont = my_create_font();
-	SendMessage(hwnd, WM_SETFONT, (WPARAM)hFont , TRUE);
 }
 
 SIZE my_text_size(HDC hdc, char* text, int textLength) {
 	SIZE size;
 
 	// select a font into the device context
-	HFONT hFont = my_create_font();
-	SelectObject(hdc, hFont);
+	//HFONT hFont = my_create_font(16);
+	//SelectObject(hdc, hFont);
 
 	// get the size of the text
 	GetTextExtentPoint32(hdc, text, textLength, &size);
 	
-	DeleteObject(hFont);
+	//DeleteObject(hFont);
 
 	// the width and height of the text are in the size structure
-	int width = size.cx;
-	int height = size.cy;
 	return size;
 }
 
@@ -63,11 +53,8 @@ void my_scissor_rect(HDC hdc, int x, int y, int w, int h) {
 	// set the scissor rectangle for the device context
 	SelectClipRgn(hdc, hRgn);
 
-	// draw some graphics that will be clipped by the scissor rectangle
-	// ...
-
 	// release the region and the device context
-	// DeleteObject(hRgn);
+	DeleteObject(hRgn);
 }
 
 int get_mouse_x(LPARAM lParam) {
@@ -78,21 +65,7 @@ int get_mouse_y(LPARAM lParam) {
 	int y = HIWORD(lParam);
 }
 
-void draw_background(HWND hWnd, WPARAM wParam) {
-	 /*RECT rc;
-     GetClientRect(hWnd, &rc);
-     HDC hdc = (HDC)wParam;
-     HBRUSH hBrush = CreateSolidBrush(RGB(255, 255, 255));//(HBRUSH)GetClassLongPtr(hWnd, GCLP_HBRBACKGROUND);
-     FillRect(hdc, &rc, hBrush);*/
-}
-
-void set_background(HWND hWnd) {
-	 //HBRUSH hBrush = CreateSolidBrush(RGB(255, 255, 255));
-     //SetClassLongPtr(hWnd, GCLP_HBRBACKGROUND, (LONG_PTR)hBrush);
-}
-
 static HBITMAP hBuffer;
-// static HDC hdcc;
 static HDC hBufferDC;
 static HDC mhdc;
 
@@ -100,17 +73,9 @@ HDC get_bufferdc() {
 	return hBufferDC;
 }
 
-HDC myhdc() {
-	return mhdc;
-}
-
-void set_hdcc(HDC h) {
-	//hdcc = h;
-}
-
 void bit_blt(HDC hdcc, PAINTSTRUCT ps, HDC hBufferDC) {
 	BitBlt(hdcc, ps.rcPaint.left, ps.rcPaint.top, ps.rcPaint.right - ps.rcPaint.left,
-                ps.rcPaint.bottom - ps.rcPaint.top, hBufferDC, ps.rcPaint.left, ps.rcPaint.top, SRCCOPY);
+				ps.rcPaint.bottom - ps.rcPaint.top, hBufferDC, ps.rcPaint.left, ps.rcPaint.top, SRCCOPY);
 	
 }
 
@@ -140,17 +105,17 @@ bool is_native_win32_ui() {
 
 int win32_width() {
 	 RECT clientRect;
-     GetClientRect(hwnd, &clientRect);
-     int width = clientRect.right - clientRect.left;
-     int height = clientRect.bottom - clientRect.top;
+	 GetClientRect(hwnd, &clientRect);
+	 int width = clientRect.right - clientRect.left;
+	 int height = clientRect.bottom - clientRect.top;
 	 return width;
 }
 
 int win32_height() {
 	 RECT clientRect;
-     GetClientRect(hwnd, &clientRect);
-     int width = clientRect.right - clientRect.left;
-     int height = clientRect.bottom - clientRect.top;
+	 GetClientRect(hwnd, &clientRect);
+	 int width = clientRect.right - clientRect.left;
+	 int height = clientRect.bottom - clientRect.top;
 	 return height;
 }
 
@@ -179,12 +144,11 @@ LRESULT CALLBACK WndProc_A(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 void WndProc_create(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
 	is_win32_ui = true;
 	hwnd = hWnd;
-	set_font(hWnd);
 	hDC = GetDC(hWnd);
-            hBufferDC = CreateCompatibleDC(hDC);
-            hBuffer = CreateCompatibleBitmap(hDC, 640, 480);
-            SelectObject(hBufferDC, hBuffer);
-            ReleaseDC(hWnd, hDC);
+	hBufferDC = CreateCompatibleDC(hDC);
+			hBuffer = CreateCompatibleBitmap(hDC, 640, 480);
+			SelectObject(hBufferDC, hBuffer);
+			ReleaseDC(hWnd, hDC);
 }
 
 void WndProc_pa(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
@@ -215,48 +179,62 @@ void win32_draw_line(HDC hdc, int a, int b, int c, int d) {
 	LineTo(hdc, c, d);
 }
 
-void ConvertBGRToRGB(unsigned char* data, int width, int height, int bytesPerPixel) {
+unsigned char* ConvertBGRToRGB_(unsigned char* data, int width, int height, int bytesPerPixel) {
+	unsigned char* copyData = malloc(width * height * bytesPerPixel);
+	memcpy(copyData, data, width * height * bytesPerPixel);
 	for (int i = 0; i < width * height * bytesPerPixel; i += bytesPerPixel) {
-        unsigned char temp = data[i];
-        data[i] = data[i + 2];
-        data[i + 2] = temp;
-    }
+		unsigned char temp = copyData[i];
+		copyData[i] = copyData[i + 2];
+		copyData[i + 2] = temp;
+	}
+	//memcpy(data, copyData, width * height * bytesPerPixel);
+	//free(copyData);
+	return copyData;
 }
 
-HBITMAP CreateBitmapFromPixels(HDC hdc,int width,int height,void *pixels) {
-	ConvertBGRToRGB(pixels, width, height, 4);
+void ConvertBGRToRGB(unsigned char* data, int width, int height, int bytesPerPixel) {
+	for (int i = 0; i < width * height * bytesPerPixel; i += bytesPerPixel) {
+		unsigned char temp = data[i];
+		data[i] = data[i + 2];
+		data[i + 2] = temp;
+	}
+}
 
-    BITMAPINFO bmi = {0};
-    bmi.bmiHeader.biSize = sizeof(bmi.bmiHeader);
-    bmi.bmiHeader.biWidth = width;
-    bmi.bmiHeader.biHeight = -height; // top-down
-    bmi.bmiHeader.biPlanes = 1;
-    bmi.bmiHeader.biBitCount = 32; // 24 = RGB, 32 = RGBA
-    bmi.bmiHeader.biCompression = BI_RGB;
+HBITMAP CreateBitmapFromPixels(HDC hdc,int width,int height,void *pixelss) {
+	unsigned char* pixels = ConvertBGRToRGB_(pixelss, width, height, 4);
 
-    HBITMAP hbm = CreateDIBitmap(hdc,&bmi.bmiHeader,CBM_INIT,pixels,&bmi,DIB_RGB_COLORS);
+	BITMAPINFO bmi = {0};
+	bmi.bmiHeader.biSize = sizeof(bmi.bmiHeader);
+	bmi.bmiHeader.biWidth = width;
+	bmi.bmiHeader.biHeight = -height; // top-down
+	bmi.bmiHeader.biPlanes = 1;
+	bmi.bmiHeader.biBitCount = 32; // 24 = RGB, 32 = RGBA
+	bmi.bmiHeader.biCompression = BI_RGB;
 
-    return hbm;
+	HBITMAP hbm = CreateDIBitmap(hdc,&bmi.bmiHeader,CBM_INIT, pixels,&bmi,DIB_RGB_COLORS);
+	free(pixels);
+
+	return hbm;
 }
 
 // https://learn.microsoft.com/en-us/windows/win32/controls/draw-an-image
 void PaintImage(HDC hdc, HBITMAP hbm, int x, int y, int w, int h) {
-    HDC hdcMem = CreateCompatibleDC(hdc);
-    HGDIOBJ hbmOld = SelectObject(hdcMem,hbm);
+	HDC hdcMem = CreateCompatibleDC(hdc);
+	HGDIOBJ hbmOld = SelectObject(hdcMem,hbm);
 
-    BITMAP bm;
-    GetObject(hbm,sizeof(bm),&bm);
+	BITMAP bm;
+	GetObject(hbm,sizeof(bm),&bm);
 
-    BLENDFUNCTION bf;
-    bf.BlendOp = AC_SRC_OVER;
-    bf.BlendFlags = 0;
-    bf.SourceConstantAlpha = 255; // use per-pixel alpha values
-    bf.AlphaFormat = AC_SRC_ALPHA; // bitmap has alpha channel
+	BLENDFUNCTION bf;
+	bf.BlendOp = AC_SRC_OVER;
+	bf.BlendFlags = 0;
+	bf.SourceConstantAlpha = 255; // use per-pixel alpha values
+	bf.AlphaFormat = AC_SRC_ALPHA; // bitmap has alpha channel
 
-    AlphaBlend(hdc, x, y, w, h, hdcMem, 0, 0, bm.bmWidth, bm.bmHeight, bf);
+	AlphaBlend(hdc, x, y, w, h, hdcMem, 0, 0, bm.bmWidth, bm.bmHeight, bf);
 
-    SelectObject(hdcMem,hbmOld);
-    DeleteDC(hdcMem);
+	SelectObject(hdcMem,hbmOld);
+	DeleteDC(hdcMem);
 }
 
 
@@ -275,22 +253,22 @@ void win32_draw_triangle(HDC hdc, int x1, int y1, int x2, int y2, int x3, int y3
 
 
 void draw_rect_filled_alpha(HDC hdc, int x, int y, int width, int height, COLORREF rgb, int alpha) {
-    HDC hdcMem = CreateCompatibleDC(hdc);
-    HBITMAP hBitmap = CreateCompatibleBitmap(hdc, width, height);
+	HDC hdcMem = CreateCompatibleDC(hdc);
+	HBITMAP hBitmap = CreateCompatibleBitmap(hdc, width, height);
 
-    SelectObject(hdcMem, hBitmap);
+	SelectObject(hdcMem, hBitmap);
 
-    HBRUSH hBrush = CreateSolidBrush(rgb);
+	HBRUSH hBrush = CreateSolidBrush(rgb);
 	
 	RECT rec = {0, 0, width, height};
 	FillRect(hdcMem, &rec, hBrush);
 	
-    DeleteObject(hBrush);
+	DeleteObject(hBrush);
 
-    // Use the AlphaBlend function to draw the bitmap onto the DC of the window
-    BLENDFUNCTION blendFunc = { AC_SRC_OVER, 0, alpha, 0 };
-    AlphaBlend(hdc, x, y, width, height, hdcMem, 0, 0, width, height, blendFunc);
+	// Use the AlphaBlend function to draw the bitmap onto the DC of the window
+	BLENDFUNCTION blendFunc = { AC_SRC_OVER, 0, alpha, 0 };
+	AlphaBlend(hdc, x, y, width, height, hdcMem, 0, 0, width, height, blendFunc);
 
-    DeleteObject(hBitmap);
-    DeleteDC(hdcMem);
+	DeleteObject(hBitmap);
+	DeleteDC(hdcMem);
 }
