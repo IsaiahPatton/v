@@ -130,13 +130,13 @@ fn C.BeginPaint(hwnd C.HWND, lppaint C.LPPAINTSTRUCT) C.HDC
 fn C.EndPaint(hwnd C.HWND, lppaint C.LPPAINTSTRUCT)
 fn C.CreateSolidBrush(color C.COLORREF) C.HBRUSH
 fn C.RGB(r int, g int, b int) C.COLORREF
-fn C.win32_draw_line(hdc C.HDC, a int, b int, c int, d int)
+fn C.win32_draw_line(hdc C.HDC, a int, b int, c int, d int, rgb C.COLORREF, style int)
 fn C.draw_rect_filled_alpha(hdc C.HDC, x int, y int, w int, h int, rgb C.COLORREF, alpha int)
 fn C.win32_draw_triangle(hdc C.HDC, x int, y int, x2 int, y2 int, x3 int, y3 int, r int, g int, b int)
 fn C.FillRect(hdc C.HDC, rect &C.tagRECT, hbr C.HBRUSH)
 fn C.FrameRect(hdc C.HDC, rect &C.tagRECT, hbr C.HBRUSH)
 fn C.CreateBitmapFromPixels(hdc C.HDC, width int, height int, pixels voidptr) C.HBITMAP
-fn C.PaintImage(hdc C.HDC, hbm C.HBITMAP, x int, y int, w int, h int)
+fn C.PaintImage(hdc C.HDC, hbm C.HBITMAP, x int, y int, w int, h int, px int, py int, pw int, ph int)
 
 // text c fns
 fn C.DrawText(hdc C.HDC, lpchtext &u16, cch int, rect &C.tagRECT, format u32)
@@ -181,6 +181,10 @@ fn win32_get_window_size(hwnd C.HWND) (int, int) {
 	rect := &C.tagRECT{}
 	C.GetClientRect(hwnd, rect)
 	return int(rect.right - rect.left), int(rect.bottom - rect.top)
+}
+
+fn to_colorref(c gx.Color) C.COLORREF {
+	return C.RGB(c.r, c.g, c.b)
 }
 
 // Create a new Win32 Window
@@ -292,7 +296,6 @@ fn my_wnd_proc(hwnd C.HWND, message u32, wParam C.WPARAM, lParam C.LPARAM) C.LRE
 	}
 
 	if message == gg.wm_mousemove {
-		// C.InvalidateRect(hwnd, C.NULL, C.TRUE)
 		mx := C.get_mouse_x(lParam)
 		my := C.get_mouse_y(lParam)
 
@@ -488,8 +491,8 @@ fn win32_draw_pixel(hdc C.HDC, x f32, y f32, c gx.Color) {
 }
 
 // Draw line
-fn win32_draw_line(hdc C.HDC, a f32, b f32, c f32, d f32) {
-	C.win32_draw_line(hdc, int(a), int(b), int(c), int(d))
+fn win32_draw_line(hdc C.HDC, a f32, b f32, c f32, d f32, rgb C.COLORREF, style int) {
+	C.win32_draw_line(hdc, int(a), int(b), int(c), int(d), rgb, style)
 }
 
 // Draw pixels

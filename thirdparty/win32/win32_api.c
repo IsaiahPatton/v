@@ -174,9 +174,14 @@ void win32_set_bg(int r, int g, int b) {
 	background = RGB(r, g, b);
 }
 
-void win32_draw_line(HDC hdc, int a, int b, int c, int d) {
-	MoveToEx(hdc, a, b, NULL);
-	LineTo(hdc, c, d);
+// PS_SOLID = 0
+// PS_DOT = 2
+void win32_draw_line(HDC hdc, int a, int b, int c, int d, COLORREF color, int style) {
+	HPEN hPen = CreatePen(style, 1, color);
+    HPEN hOldPen = SelectObject(hdc, hPen); 
+    MoveToEx(hdc, a, b, NULL);
+    LineTo(hdc, c, d);
+    SelectObject(hdc, hOldPen);
 }
 
 unsigned char* ConvertBGRToRGB_(unsigned char* data, int width, int height, int bytesPerPixel) {
@@ -187,8 +192,6 @@ unsigned char* ConvertBGRToRGB_(unsigned char* data, int width, int height, int 
 		copyData[i] = copyData[i + 2];
 		copyData[i + 2] = temp;
 	}
-	//memcpy(data, copyData, width * height * bytesPerPixel);
-	//free(copyData);
 	return copyData;
 }
 
@@ -218,7 +221,7 @@ HBITMAP CreateBitmapFromPixels(HDC hdc,int width,int height,void *pixelss) {
 }
 
 // https://learn.microsoft.com/en-us/windows/win32/controls/draw-an-image
-void PaintImage(HDC hdc, HBITMAP hbm, int x, int y, int w, int h) {
+void PaintImage(HDC hdc, HBITMAP hbm, int x, int y, int w, int h, int px, int py, int pw, int ph) {
 	HDC hdcMem = CreateCompatibleDC(hdc);
 	HGDIOBJ hbmOld = SelectObject(hdcMem,hbm);
 
@@ -231,7 +234,11 @@ void PaintImage(HDC hdc, HBITMAP hbm, int x, int y, int w, int h) {
 	bf.SourceConstantAlpha = 255; // use per-pixel alpha values
 	bf.AlphaFormat = AC_SRC_ALPHA; // bitmap has alpha channel
 
-	AlphaBlend(hdc, x, y, w, h, hdcMem, 0, 0, bm.bmWidth, bm.bmHeight, bf);
+	if (pw != 0) {
+		AlphaBlend(hdc, x, y, w, h, hdcMem, px, py, pw, ph, bf);
+	} else {
+		AlphaBlend(hdc, x, y, w, h, hdcMem, 0, 0, bm.bmWidth, bm.bmHeight, bf);
+	}
 
 	SelectObject(hdcMem,hbmOld);
 	DeleteDC(hdcMem);

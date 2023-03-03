@@ -266,14 +266,6 @@ pub fn (mut ctx Context) create_image_from_memory(buf &u8, bufsize int) Image {
 		id: ctx.image_cache.len
 	}
 
-	$if windows {
-		if ctx.native_rendering {
-			// img.wimg = &WImg{
-			//	C.CreateBitmapFromPixels(ctx.win32.hdc, stb_img.width, stb_img.height, stb_img.data)
-			//}
-		}
-	}
-
 	ctx.image_cache << img
 	return img
 }
@@ -319,8 +311,13 @@ pub fn (ctx &Context) draw_image_with_config(config DrawImageConfig) {
 				img.wimg = &WImg{C.CreateBitmapFromPixels(ctx.win32.hdc, img.width, img.height,
 					img.data)}
 			}
+			
+			px := config.part_rect.x
+			py := config.part_rect.y
+			pw := config.part_rect.width
+			ph := config.part_rect.height
 
-			C.PaintImage(ctx.win32.hdc, img.wimg.m, x, y, w, h)
+			C.PaintImage(ctx.win32.hdc, img.wimg.m, x, y, w, h, px, py, pw, ph)
 			return
 		}
 	}
