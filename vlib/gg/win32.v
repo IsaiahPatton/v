@@ -116,13 +116,10 @@ fn C.CreateCompatibleDC(hdc C.HDC) C.HDC
 fn C.CreateCompatibleBitmap(hdc C.HDC, cx int, cy int) C.HBITMAP
 fn C.ReleaseDC(hwnd C.HWND, hdc C.HDC)
 fn C.BitBlt(hdc C.HDC, x int, y int, cx int, cy int, hdcsrc C.HDC, x1 int, y1 int, rop C.DWORD)
-fn C.bit_blt(hdc C.HDC, ps C.PAINTSTRUCT, hbufferdc C.HDC)
 
 fn C.win32_set_bg(r int, g int, b int)
 
 fn C.get_bufferdc() C.HDC
-
-fn C.do_paint(hwnd C.HWND, hbufferdc C.HDC) C.HDC
 
 // Draw C fns
 fn C.InvalidateRect(hwnd C.HWND, rect &C.tagRECT, berase bool)
@@ -136,7 +133,9 @@ fn C.win32_draw_triangle(hdc C.HDC, x int, y int, x2 int, y2 int, x3 int, y3 int
 fn C.FillRect(hdc C.HDC, rect &C.tagRECT, hbr C.HBRUSH)
 fn C.FrameRect(hdc C.HDC, rect &C.tagRECT, hbr C.HBRUSH)
 fn C.CreateBitmapFromPixels(hdc C.HDC, width int, height int, pixels voidptr) C.HBITMAP
+fn C.CreateBitmapFromPixels_2(hdc C.HDC, width int, height int, pixels voidptr) C.HBITMAP
 fn C.PaintImage(hdc C.HDC, hbm C.HBITMAP, x int, y int, w int, h int, px int, py int, pw int, ph int)
+fn C.PaintImage_2(hdc C.HDC, pixels voidptr, x int, y int, w int, h int, px int, py int, pw int, ph int)
 
 // text c fns
 fn C.DrawText(hdc C.HDC, lpchtext &u16, cch int, rect &C.tagRECT, format u32)
@@ -145,6 +144,7 @@ fn C.fix_text_background(hdc C.HDC)
 fn C.SetTextColor(hdc C.HDC, color C.COLORREF)
 fn C.my_create_font(size int) C.HFONT
 
+[typedef]
 struct C.PAINTSTRUCT {
 }
 
@@ -180,6 +180,7 @@ fn cstr(the_string string) &char {
 fn win32_get_window_size(hwnd C.HWND) (int, int) {
 	rect := &C.tagRECT{}
 	C.GetClientRect(hwnd, rect)
+	C.DeleteObject(C.HGDIOBJ(rect))
 	return int(rect.right - rect.left), int(rect.bottom - rect.top)
 }
 
@@ -228,6 +229,12 @@ fn win32_run_message_loop() {
 	}
 }
 
+fn C.win32_test()
+
+pub fn win32_test() {
+	C.win32_test()
+}
+
 // Stores HDC & HWND of window
 [heap]
 struct Win32Userdata {
@@ -235,18 +242,16 @@ mut:
 	ctx  &Context
 	hdc  C.HDC
 	hwnd C.HWND
-}
-
-fn win32_get_userdata(hwnd C.HWND) &Win32Userdata {
-	mut dat := C.GetWindowLongPtr(hwnd, gg.gwlp_userdata)
-	mut mydat := unsafe { &Win32Userdata(voidptr(dat)) }
-	return mydat
+	test int
+	frames int
+	fps int
 }
 
 fn win32_set_userdata(hwnd C.HWND, ctx &Context) &Win32Userdata {
 	mut data := &Win32Userdata{
 		ctx: ctx
-		hwnd: hwnd
+		hwnd: hwnd,
+		test: 0
 	}
 
 	C.SetWindowLongPtr(hwnd, gg.gwlp_userdata, C.LONG_PTR(data))
@@ -279,8 +284,15 @@ pub mut:
 }
 */
 
+[manualfree]
 struct WImg {
 	m C.HBITMAP
+}
+
+fn create_wimg(hdc C.HDC, w int, h int, data voidptr) &WImg {
+	return &WImg{
+		m: C.CreateBitmapFromPixels(hdc, w, h, data)
+	}
 }
 
 // Win32 Window Events
@@ -288,6 +300,7 @@ fn my_wnd_proc(hwnd C.HWND, message u32, wParam C.WPARAM, lParam C.LPARAM) C.LRE
 	mut dat := C.GetWindowLongPtr(hwnd, gg.gwlp_userdata)
 
 	if message == 20 {
+		//dump(message)
 		return C.LRESULT(1)
 	}
 
@@ -310,7 +323,7 @@ fn my_wnd_proc(hwnd C.HWND, message u32, wParam C.WPARAM, lParam C.LPARAM) C.LRE
 			mut mydat := unsafe { &Win32Userdata(voidptr(dat)) }
 			gg_event_fn_(ev, mydat.ctx)
 		}
-		return C.LRESULT(0)
+		return C.LRESULT(1)
 	}
 
 	if message == gg.vm_lbuttondown {
@@ -328,7 +341,7 @@ fn my_wnd_proc(hwnd C.HWND, message u32, wParam C.WPARAM, lParam C.LPARAM) C.LRE
 			mut mydat := unsafe { &Win32Userdata(voidptr(dat)) }
 			gg_event_fn_(ev, mydat.ctx)
 		}
-		return C.LRESULT(0)
+		return C.LRESULT(1)
 	}
 
 	if message == gg.vm_lbuttonup {
@@ -346,13 +359,14 @@ fn my_wnd_proc(hwnd C.HWND, message u32, wParam C.WPARAM, lParam C.LPARAM) C.LRE
 			mut mydat := unsafe { &Win32Userdata(voidptr(dat)) }
 			gg_event_fn_(ev, mydat.ctx)
 		}
-		return C.LRESULT(0)
+		return C.LRESULT(1)
 	}
 
 	if message == gg.wm_create {
 		C.WndProc_create(hwnd, message, wParam, lParam)
 		target_fps := 60
 		C.SetTimer(hwnd, 1, (1000 / target_fps), C.NULL)
+		C.SetTimer(hwnd, 2, 1000, C.NULL)
 		return C.LRESULT(0)
 	}
 
@@ -362,6 +376,15 @@ fn my_wnd_proc(hwnd C.HWND, message u32, wParam C.WPARAM, lParam C.LPARAM) C.LRE
 		if timerid == 1 {
 			C.InvalidateRect(hwnd, C.NULL, C.TRUE)
 		}
+		if timerid == 2 {
+			if dat != unsafe { nil } {
+				mut mydat := unsafe { &Win32Userdata(voidptr(dat)) }
+				mydat.fps = mydat.frames
+				mydat.frames = 0
+				dump(mydat.fps)
+			}
+		}
+		return C.LRESULT(0)
 	}
 
 	if message == gg.wm_keydown {
@@ -416,9 +439,13 @@ fn my_wnd_proc(hwnd C.HWND, message u32, wParam C.WPARAM, lParam C.LPARAM) C.LRE
 		hfont := C.my_create_font(16)
 		if dat != unsafe { nil } {
 			mut mydat := unsafe { &Win32Userdata(voidptr(dat)) }
-			mydat.hdc = C.get_bufferdc() // hbufferdc
+			if mydat.test == 0 {
+				mydat.hdc = C.get_bufferdc() // hbufferdc
+				mydat.test = 1
+			}
 			C.SelectObject(mydat.hdc, C.HGDIOBJ(hfont))
 			gg_frame_fn(mut mydat.ctx)
+			mydat.frames += 1
 		}
 		C.DeleteObject(C.HGDIOBJ(hfont))
 		C.WndProc_pb(hwnd, message, wParam, lParam)

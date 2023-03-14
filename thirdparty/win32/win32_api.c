@@ -8,6 +8,7 @@
 HFONT my_create_font(int size) {
 	return CreateFont(size, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, ANSI_CHARSET, 
 				OUT_DEFAULT_PRECIS, CLIP_DFA_DISABLE, DEFAULT_QUALITY, DEFAULT_PITCH, TEXT("Arial"));
+				//OUT_DEFAULT_PRECIS, CLIP_DFA_DISABLE, DEFAULT_QUALITY, DEFAULT_PITCH, TEXT("Arial"));
 }
 
 void stf() {
@@ -67,34 +68,17 @@ int get_mouse_y(LPARAM lParam) {
 
 static HBITMAP hBuffer;
 static HDC hBufferDC;
+static HDC hDC;
 static HDC mhdc;
 
 HDC get_bufferdc() {
 	return hBufferDC;
 }
 
-void bit_blt(HDC hdcc, PAINTSTRUCT ps, HDC hBufferDC) {
-	BitBlt(hdcc, ps.rcPaint.left, ps.rcPaint.top, ps.rcPaint.right - ps.rcPaint.left,
-				ps.rcPaint.bottom - ps.rcPaint.top, hBufferDC, ps.rcPaint.left, ps.rcPaint.top, SRCCOPY);
-	
-}
-
-HDC do_paint(HWND hwnd, HDC hbufferdc) {
-	PAINTSTRUCT ps;
-	HDC hdcc = BeginPaint(hwnd, &ps);
-	mhdc = hdcc;
-	//bit_blt(hdcc, ps, hbufferdc);
-	EndPaint(hwnd, &ps);
-	return hdcc;
-}
-
 int RegisterClassEx_(WNDCLASS* claz) {
 	return RegisterClassEx(claz);
 }
 
-static HBITMAP hBuffer;
-static HDC hDC;
-static HDC hBufferDC;
 static COLORREF background = RGB(255, 255, 255);
 static is_win32_ui = false;
 static HWND hwnd;
@@ -146,12 +130,15 @@ void WndProc_create(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
 	hwnd = hWnd;
 	hDC = GetDC(hWnd);
 	hBufferDC = CreateCompatibleDC(hDC);
-			hBuffer = CreateCompatibleBitmap(hDC, 640, 480);
-			SelectObject(hBufferDC, hBuffer);
-			ReleaseDC(hWnd, hDC);
+	hBuffer = CreateCompatibleBitmap(hDC, 640, 480);
+	SelectObject(hBufferDC, hBuffer);
+	ReleaseDC(hWnd, hDC);
 }
 
+static PAINTSTRUCT ps;
+
 void WndProc_pa(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
+		hDC = BeginPaint(hWnd, &ps);
 	RECT rc;
 	GetClientRect(hWnd, &rc);
 	HBRUSH hBrush = CreateSolidBrush(background);
@@ -160,10 +147,6 @@ void WndProc_pa(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
 }
 
 void WndProc_pb(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
-	 // Copy the memory buffer to the screen
-	PAINTSTRUCT ps;
-	hDC = BeginPaint(hWnd, &ps);
-
 	BitBlt(hDC, ps.rcPaint.left, ps.rcPaint.top, ps.rcPaint.right - ps.rcPaint.left,
 		ps.rcPaint.bottom - ps.rcPaint.top, hBufferDC, ps.rcPaint.left, ps.rcPaint.top, SRCCOPY);
 	EndPaint(hWnd, &ps);
@@ -182,6 +165,7 @@ void win32_draw_line(HDC hdc, int a, int b, int c, int d, COLORREF color, int st
     MoveToEx(hdc, a, b, NULL);
     LineTo(hdc, c, d);
     SelectObject(hdc, hOldPen);
+	DeleteObject(hPen);
 }
 
 unsigned char* ConvertBGRToRGB_(unsigned char* data, int width, int height, int bytesPerPixel) {
@@ -203,6 +187,8 @@ void ConvertBGRToRGB(unsigned char* data, int width, int height, int bytesPerPix
 	}
 }
 
+//static count_im = 0;
+
 HBITMAP CreateBitmapFromPixels(HDC hdc,int width,int height,void *pixelss) {
 	unsigned char* pixels = ConvertBGRToRGB_(pixelss, width, height, 4);
 
@@ -214,19 +200,36 @@ HBITMAP CreateBitmapFromPixels(HDC hdc,int width,int height,void *pixelss) {
 	bmi.bmiHeader.biBitCount = 32; // 24 = RGB, 32 = RGBA
 	bmi.bmiHeader.biCompression = BI_RGB;
 
-	HBITMAP hbm = CreateDIBitmap(hdc,&bmi.bmiHeader,CBM_INIT, pixels,&bmi,DIB_RGB_COLORS);
+	HBITMAP hbm = CreateDIBitmap(hdc, &bmi.bmiHeader, CBM_INIT, pixels, &bmi, DIB_RGB_COLORS);
+	//count_im += 1;
+	
+	//printf("IMG count: %i\n", count_im);
+	
 	free(pixels);
+	//DeleteObject(hbm);
 
 	return hbm;
 }
 
+static use_static_hdc = false;
+
+void win32_test() {
+	use_static_hdc = !use_static_hdc;
+	printf("Using static hdc: %s\n", use_static_hdc ? "true" : "false");
+}
+
 // https://learn.microsoft.com/en-us/windows/win32/controls/draw-an-image
-void PaintImage(HDC hdc, HBITMAP hbm, int x, int y, int w, int h, int px, int py, int pw, int ph) {
+void PaintImage(HDC hdca, HBITMAP* hbm, int x, int y, int w, int h, int px, int py, int pw, int ph) {
+	HDC hdc = hdca;
+	if (use_static_hdc) {
+		hdc = get_bufferdc();
+ 	}
+
 	HDC hdcMem = CreateCompatibleDC(hdc);
 	HGDIOBJ hbmOld = SelectObject(hdcMem,hbm);
 
 	BITMAP bm;
-	GetObject(hbm,sizeof(bm),&bm);
+	GetObject(hbm, sizeof(bm), &bm);
 
 	BLENDFUNCTION bf;
 	bf.BlendOp = AC_SRC_OVER;
@@ -242,6 +245,7 @@ void PaintImage(HDC hdc, HBITMAP hbm, int x, int y, int w, int h, int px, int py
 
 	SelectObject(hdcMem,hbmOld);
 	DeleteDC(hdcMem);
+	DeleteObject(hdcMem);
 }
 
 
@@ -264,15 +268,13 @@ void draw_rect_filled_alpha(HDC hdc, int x, int y, int width, int height, COLORR
 	HBITMAP hBitmap = CreateCompatibleBitmap(hdc, width, height);
 
 	SelectObject(hdcMem, hBitmap);
-
 	HBRUSH hBrush = CreateSolidBrush(rgb);
-	
+
 	RECT rec = {0, 0, width, height};
 	FillRect(hdcMem, &rec, hBrush);
 	
 	DeleteObject(hBrush);
 
-	// Use the AlphaBlend function to draw the bitmap onto the DC of the window
 	BLENDFUNCTION blendFunc = { AC_SRC_OVER, 0, alpha, 0 };
 	AlphaBlend(hdc, x, y, width, height, hdcMem, 0, 0, width, height, blendFunc);
 

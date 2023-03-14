@@ -72,8 +72,9 @@ pub fn (ctx &Context) create_image(file string) Image {
 
 	$if windows {
 		if ctx.native_rendering {
-			img.wimg = &WImg{C.CreateBitmapFromPixels(ctx.win32.hdc, img.width, img.height,
-				img.data)}
+			//img.wimg = &WImg{C.CreateBitmapFromPixels(ctx.win32.hdc, img.width, img.height,
+			//	img.data)}
+			img.wimg = create_wimg(ctx.win32.hdc, img.width, img.height, img.data)
 			return img
 		}
 	}
@@ -180,8 +181,9 @@ pub fn (mut ctx Context) update_pixel_data(cached_image_idx int, buf &u8) {
 	$if windows {
 		if ctx.native_rendering {
 			mut img := ctx.get_cached_image_by_idx(cached_image_idx)
-			img.wimg = &WImg{C.CreateBitmapFromPixels(ctx.win32.hdc, img.width, img.height,
-				buf)}
+			img.wimg = create_wimg(ctx.win32.hdc, img.width, img.height, buf)
+			//img.wimg = &WImg{C.CreateBitmapFromPixels(ctx.win32.hdc, img.width, img.height,
+			//	buf)}
 			return
 		}
 	}
@@ -308,8 +310,7 @@ pub fn (ctx &Context) draw_image_with_config(config DrawImageConfig) {
 					return
 				}
 
-				img.wimg = &WImg{C.CreateBitmapFromPixels(ctx.win32.hdc, img.width, img.height,
-					img.data)}
+				img.wimg = create_wimg(ctx.win32.hdc, img.width, img.height, img.data)
 			}
 			
 			px := config.part_rect.x
