@@ -5,13 +5,17 @@
 #include <stdio.h>
 #include <wingdi.h>
 
+static HBITMAP hBuffer;
+static HDC hBufferDC;
+static HDC hDC;
+static COLORREF background = RGB(255, 255, 255);
+static is_win32_ui = false;
+static HWND hwnd;
+static PAINTSTRUCT ps;
+
 HFONT my_create_font(int size) {
 	return CreateFont(size, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, ANSI_CHARSET, 
 				OUT_DEFAULT_PRECIS, CLIP_DFA_DISABLE, DEFAULT_QUALITY, DEFAULT_PITCH, TEXT("Arial"));
-				//OUT_DEFAULT_PRECIS, CLIP_DFA_DISABLE, DEFAULT_QUALITY, DEFAULT_PITCH, TEXT("Arial"));
-}
-
-void stf() {
 }
 
 SIZE my_text_size(HDC hdc, char* text, int textLength) {
@@ -40,21 +44,14 @@ void set_text_color(HDC hdc, COLORREF color) {
 	SetTextColor(hdc, color);
 }
 
+// creates a clipping region using the coordinates and dimensions provided by the x, y, w, and h parameters.
 void my_scissor_rect(HDC hdc, int x, int y, int w, int h) {
 	HRGN hRgn;
-	RECT rect;
+	RECT rect = {x, y, x + w, y + h};
 
-	// create a region that defines the scissor rectangle
-	rect.left = x;
-	rect.top = y;
-	rect.right = x + w;
-	rect.bottom = y + h;
 	hRgn = CreateRectRgnIndirect(&rect);
 
-	// set the scissor rectangle for the device context
 	SelectClipRgn(hdc, hRgn);
-
-	// release the region and the device context
 	DeleteObject(hRgn);
 }
 
@@ -66,43 +63,31 @@ int get_mouse_y(LPARAM lParam) {
 	int y = HIWORD(lParam);
 }
 
-static HBITMAP hBuffer;
-static HDC hBufferDC;
-static HDC hDC;
-static HDC mhdc;
-
 HDC get_bufferdc() {
 	return hBufferDC;
+}
+
+bool is_native_win32_ui() {
+	return is_win32_ui;
 }
 
 int RegisterClassEx_(WNDCLASS* claz) {
 	return RegisterClassEx(claz);
 }
 
-static COLORREF background = RGB(255, 255, 255);
-static is_win32_ui = false;
-static HWND hwnd;
-
-bool is_native_win32_ui() {
-	return is_win32_ui;
-}
-
 int win32_width() {
 	 RECT clientRect;
 	 GetClientRect(hwnd, &clientRect);
 	 int width = clientRect.right - clientRect.left;
-	 int height = clientRect.bottom - clientRect.top;
 	 return width;
 }
 
 int win32_height() {
 	 RECT clientRect;
 	 GetClientRect(hwnd, &clientRect);
-	 int width = clientRect.right - clientRect.left;
 	 int height = clientRect.bottom - clientRect.top;
 	 return height;
 }
-
 
 LRESULT CALLBACK WndProc_A(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 	HDC hdc = GetDC(hwnd);
@@ -116,12 +101,9 @@ LRESULT CALLBACK WndProc_A(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 	HBITMAP hbmMem = CreateCompatibleBitmap(hdc, width, height);
 	SelectObject(hBufferDC, hbmMem);
 
-	// Draw on the memory DC
-
 	ReleaseDC(hwnd, hdc);
 	DeleteDC(hdcMem);
 	DeleteObject(hbmMem);
-
 	return 0;
 }
 
@@ -135,10 +117,8 @@ void WndProc_create(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
 	ReleaseDC(hWnd, hDC);
 }
 
-static PAINTSTRUCT ps;
-
 void WndProc_pa(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
-		hDC = BeginPaint(hWnd, &ps);
+	hDC = BeginPaint(hWnd, &ps);
 	RECT rc;
 	GetClientRect(hWnd, &rc);
 	HBRUSH hBrush = CreateSolidBrush(background);
@@ -168,7 +148,9 @@ void win32_draw_line(HDC hdc, int a, int b, int c, int d, COLORREF color, int st
 	DeleteObject(hPen);
 }
 
-unsigned char* ConvertBGRToRGB_(unsigned char* data, int width, int height, int bytesPerPixel) {
+// converts image data from the BGR format to the RGB format.
+// It creates a copy of the input data, swaps the blue and red components of each pixel, and returns the modified copy.
+unsigned char* ConvertBGRToRGB(unsigned char* data, int width, int height, int bytesPerPixel) {
 	unsigned char* copyData = malloc(width * height * bytesPerPixel);
 	memcpy(copyData, data, width * height * bytesPerPixel);
 	for (int i = 0; i < width * height * bytesPerPixel; i += bytesPerPixel) {
@@ -179,63 +161,39 @@ unsigned char* ConvertBGRToRGB_(unsigned char* data, int width, int height, int 
 	return copyData;
 }
 
-void ConvertBGRToRGB(unsigned char* data, int width, int height, int bytesPerPixel) {
-	for (int i = 0; i < width * height * bytesPerPixel; i += bytesPerPixel) {
-		unsigned char temp = data[i];
-		data[i] = data[i + 2];
-		data[i + 2] = temp;
-	}
-}
-
-//static count_im = 0;
-
+// creates a bitmap in memory from pixel data provided as input. 
+// The function first calls the ConvertBGRToRGB function to convert the input pixel data from BGR format to RGB format.
+// This is necessary because the CreateDIBitmap function expects pixel data in RGB format.
 HBITMAP CreateBitmapFromPixels(HDC hdc,int width,int height,void *pixelss) {
-	unsigned char* pixels = ConvertBGRToRGB_(pixelss, width, height, 4);
+	unsigned char* pixels = ConvertBGRToRGB(pixelss, width, height, 4);
 
-	BITMAPINFO bmi = {0};
-	bmi.bmiHeader.biSize = sizeof(bmi.bmiHeader);
-	bmi.bmiHeader.biWidth = width;
-	bmi.bmiHeader.biHeight = -height; // top-down
-	bmi.bmiHeader.biPlanes = 1;
-	bmi.bmiHeader.biBitCount = 32; // 24 = RGB, 32 = RGBA
-	bmi.bmiHeader.biCompression = BI_RGB;
+	BITMAPINFO bmi = {
+	  .bmiHeader.biSize = sizeof(BITMAPINFOHEADER),
+	  .bmiHeader.biWidth = width,
+	  .bmiHeader.biHeight = -height,
+	  .bmiHeader.biPlanes = 1,
+	  .bmiHeader.biBitCount = 32,
+	  .bmiHeader.biCompression = BI_RGB
+	};
 
 	HBITMAP hbm = CreateDIBitmap(hdc, &bmi.bmiHeader, CBM_INIT, pixels, &bmi, DIB_RGB_COLORS);
-	//count_im += 1;
-	
-	//printf("IMG count: %i\n", count_im);
-	
 	free(pixels);
-	//DeleteObject(hbm);
 
 	return hbm;
 }
 
-static use_static_hdc = false;
-
-void win32_test() {
-	use_static_hdc = !use_static_hdc;
-	printf("Using static hdc: %s\n", use_static_hdc ? "true" : "false");
-}
-
+// The PaintImage function draws a bitmap at a specified location with a specified size.
+// The function uses alpha blending to blend the bitmap with the underlying pixels on
+// the device context, allowing for transparent or partially transparent images.
 // https://learn.microsoft.com/en-us/windows/win32/controls/draw-an-image
-void PaintImage(HDC hdca, HBITMAP* hbm, int x, int y, int w, int h, int px, int py, int pw, int ph) {
-	HDC hdc = hdca;
-	if (use_static_hdc) {
-		hdc = get_bufferdc();
- 	}
-
+void PaintImage(HDC hdc, HBITMAP* hbm, int x, int y, int w, int h, int px, int py, int pw, int ph) {
 	HDC hdcMem = CreateCompatibleDC(hdc);
 	HGDIOBJ hbmOld = SelectObject(hdcMem,hbm);
 
 	BITMAP bm;
 	GetObject(hbm, sizeof(bm), &bm);
 
-	BLENDFUNCTION bf;
-	bf.BlendOp = AC_SRC_OVER;
-	bf.BlendFlags = 0;
-	bf.SourceConstantAlpha = 255; // use per-pixel alpha values
-	bf.AlphaFormat = AC_SRC_ALPHA; // bitmap has alpha channel
+	BLENDFUNCTION bf = { AC_SRC_OVER, 0, 255, AC_SRC_ALPHA };
 
 	if (pw != 0) {
 		AlphaBlend(hdc, x, y, w, h, hdcMem, px, py, pw, ph, bf);
@@ -262,7 +220,7 @@ void win32_draw_triangle(HDC hdc, int x1, int y1, int x2, int y2, int x3, int y3
 	DeleteObject(hBrush);
 }
 
-
+// Draws a filled rectangle with a specified color and opacity level using alpha blending
 void draw_rect_filled_alpha(HDC hdc, int x, int y, int width, int height, COLORREF rgb, int alpha) {
 	HDC hdcMem = CreateCompatibleDC(hdc);
 	HBITMAP hBitmap = CreateCompatibleBitmap(hdc, width, height);

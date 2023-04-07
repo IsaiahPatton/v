@@ -115,7 +115,6 @@ fn C.GetDC(hwnd C.HWND) C.HDC
 fn C.CreateCompatibleDC(hdc C.HDC) C.HDC
 fn C.CreateCompatibleBitmap(hdc C.HDC, cx int, cy int) C.HBITMAP
 fn C.ReleaseDC(hwnd C.HWND, hdc C.HDC)
-fn C.BitBlt(hdc C.HDC, x int, y int, cx int, cy int, hdcsrc C.HDC, x1 int, y1 int, rop C.DWORD)
 
 fn C.win32_set_bg(r int, g int, b int)
 
@@ -133,9 +132,7 @@ fn C.win32_draw_triangle(hdc C.HDC, x int, y int, x2 int, y2 int, x3 int, y3 int
 fn C.FillRect(hdc C.HDC, rect &C.tagRECT, hbr C.HBRUSH)
 fn C.FrameRect(hdc C.HDC, rect &C.tagRECT, hbr C.HBRUSH)
 fn C.CreateBitmapFromPixels(hdc C.HDC, width int, height int, pixels voidptr) C.HBITMAP
-fn C.CreateBitmapFromPixels_2(hdc C.HDC, width int, height int, pixels voidptr) C.HBITMAP
 fn C.PaintImage(hdc C.HDC, hbm C.HBITMAP, x int, y int, w int, h int, px int, py int, pw int, ph int)
-fn C.PaintImage_2(hdc C.HDC, pixels voidptr, x int, y int, w int, h int, px int, py int, pw int, ph int)
 
 // text c fns
 fn C.DrawText(hdc C.HDC, lpchtext &u16, cch int, rect &C.tagRECT, format u32)
@@ -154,10 +151,8 @@ fn win32_scissor_rect(hdc C.HDC, x int, y int, w int, h int) {
 
 fn win32_draw_text(hdc C.HDC, text string, x int, y int, cfg gx.TextCfg) {
 	rect := &C.tagRECT{
-		top: y
 		left: x
-		right: x + 200
-		bottom: y + 200
+		top: y
 	}
 
 	C.fix_text_background(hdc)
@@ -171,10 +166,6 @@ fn win32_draw_text(hdc C.HDC, text string, x int, y int, cfg gx.TextCfg) {
 fn win32_text_size(hdc C.HDC, text string) (f32, f32) {
 	size := C.my_text_size(hdc, text.to_wide(), text.len)
 	return size.cx, size.cy
-}
-
-fn cstr(the_string string) &char {
-	return &char(the_string.str)
 }
 
 fn win32_get_window_size(hwnd C.HWND) (int, int) {
@@ -219,8 +210,6 @@ fn win32_create_window(x int, y int, w int, h int, title string) &C.HWND {
 }
 
 // Run the Win32 message loop
-// TODO: This needs to be injected at the end of main;
-//       or else will crash.
 fn win32_run_message_loop() {
 	mut msg := C.NULL
 	for C.GetMessage(&msg, C.NULL, 0, 0) {
@@ -229,29 +218,23 @@ fn win32_run_message_loop() {
 	}
 }
 
-fn C.win32_test()
-
-pub fn win32_test() {
-	C.win32_test()
-}
-
 // Stores HDC & HWND of window
 [heap]
 struct Win32Userdata {
 mut:
-	ctx  &Context
-	hdc  C.HDC
-	hwnd C.HWND
-	test int
+	ctx    &Context
+	hdc    C.HDC
+	hwnd   C.HWND
 	frames int
-	fps int
+	fps    int
+	test   int
+	mouse_moving bool
 }
 
 fn win32_set_userdata(hwnd C.HWND, ctx &Context) &Win32Userdata {
 	mut data := &Win32Userdata{
 		ctx: ctx
-		hwnd: hwnd,
-		test: 0
+		hwnd: hwnd
 	}
 
 	C.SetWindowLongPtr(hwnd, gg.gwlp_userdata, C.LONG_PTR(data))
@@ -259,7 +242,6 @@ fn win32_set_userdata(hwnd C.HWND, ctx &Context) &Win32Userdata {
 }
 
 /**
-
 pub struct Event {
 pub mut:
 	frame_count        u64
@@ -300,7 +282,6 @@ fn my_wnd_proc(hwnd C.HWND, message u32, wParam C.WPARAM, lParam C.LPARAM) C.LRE
 	mut dat := C.GetWindowLongPtr(hwnd, gg.gwlp_userdata)
 
 	if message == 20 {
-		//dump(message)
 		return C.LRESULT(1)
 	}
 
@@ -321,6 +302,7 @@ fn my_wnd_proc(hwnd C.HWND, message u32, wParam C.WPARAM, lParam C.LPARAM) C.LRE
 
 		if dat != unsafe { nil } {
 			mut mydat := unsafe { &Win32Userdata(voidptr(dat)) }
+			mydat.mouse_moving = true
 			gg_event_fn_(ev, mydat.ctx)
 		}
 		return C.LRESULT(1)
@@ -381,7 +363,6 @@ fn my_wnd_proc(hwnd C.HWND, message u32, wParam C.WPARAM, lParam C.LPARAM) C.LRE
 				mut mydat := unsafe { &Win32Userdata(voidptr(dat)) }
 				mydat.fps = mydat.frames
 				mydat.frames = 0
-				dump(mydat.fps)
 			}
 		}
 		return C.LRESULT(0)
@@ -477,21 +458,20 @@ pub fn is_key_char(c u32) bool {
 
 // Draw rect filled
 fn win32_draw_rect_filled(hdc C.HDC, x f32, y f32, w f32, h f32, c gx.Color) {
+	color := to_colorref(c)
 	if c.a == 255 {
-		hbrush := C.CreateSolidBrush(C.RGB(c.r, c.g, c.b))
+		hbrush := C.CreateSolidBrush(color)
 		rec := C.tagRECT{x, y, x + w, y + h}
 		C.FillRect(hdc, &rec, hbrush)
 		C.DeleteObject(C.HGDIOBJ(hbrush))
 		return
 	}
-	C.draw_rect_filled_alpha(hdc, int(x), int(y), int(w), int(h), C.RGB(c.r, c.g, c.b),
-		c.a)
+	C.draw_rect_filled_alpha(hdc, x, y, w, h, color, c.a)
 }
 
 // Draw rect filled (using AlphaBlend)
 fn win32_draw_rect_filled_alpha(hdc C.HDC, x f32, y f32, w f32, h f32, c gx.Color) {
-	C.draw_rect_filled_alpha(hdc, int(x), int(y), int(w), int(h), C.RGB(c.r, c.g, c.b),
-		c.a)
+	C.draw_rect_filled_alpha(hdc, x, y, w, h, to_colorref(c), c.a)
 }
 
 // Draw rect empty
@@ -519,7 +499,7 @@ fn win32_draw_pixel(hdc C.HDC, x f32, y f32, c gx.Color) {
 
 // Draw line
 fn win32_draw_line(hdc C.HDC, a f32, b f32, c f32, d f32, rgb C.COLORREF, style int) {
-	C.win32_draw_line(hdc, int(a), int(b), int(c), int(d), rgb, style)
+	C.win32_draw_line(hdc, a, b, c, d, rgb, style)
 }
 
 // Draw pixels
