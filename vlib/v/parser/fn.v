@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2022 Alexander Medvednikov. All rights reserved.
+// Copyright (c) 2019-2023 Alexander Medvednikov. All rights reserved.
 // Use of this source code is governed by an MIT license
 // that can be found in the LICENSE file.
 module parser
@@ -113,7 +113,7 @@ pub fn (mut p Parser) call_args() []ast.CallArg {
 		mut expr := ast.empty_expr
 		if p.tok.kind == .name && p.peek_tok.kind == .colon {
 			// `foo(key:val, key2:val2)`
-			expr = p.struct_init('void_type', .short_syntax)
+			expr = p.struct_init('void_type', .short_syntax, false)
 		} else {
 			expr = p.expr(0)
 		}

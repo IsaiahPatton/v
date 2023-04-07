@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2022 Alexander Medvednikov. All rights reserved.
+// Copyright (c) 2019-2023 Alexander Medvednikov. All rights reserved.
 // Use of this source code is governed by an MIT license
 // that can be found in the LICENSE file.
 module c
@@ -190,7 +190,7 @@ fn (mut g Gen) infix_expr_eq_op(node ast.InfixExpr) {
 					g.write('*')
 				}
 				if node.left is ast.ArrayInit {
-					if !node.left.has_it {
+					if !node.left.has_index {
 						s := g.typ(left.unaliased)
 						g.write('(${s})')
 					}
@@ -198,7 +198,7 @@ fn (mut g Gen) infix_expr_eq_op(node ast.InfixExpr) {
 				g.expr(node.left)
 				g.write(', ')
 				if node.right is ast.ArrayInit {
-					if !node.right.has_it {
+					if !node.right.has_index {
 						s := g.typ(right.unaliased)
 						g.write('(${s})')
 					}
@@ -794,15 +794,20 @@ fn (mut g Gen) infix_expr_left_shift_op(node ast.InfixExpr) {
 			} else {
 				g.write(', _MOV((${elem_type_str}[]){ ')
 			}
-			// if g.autofree
-			needs_clone := !g.is_builtin_mod && array_info.elem_type.idx() == ast.string_type_idx
-				&& array_info.elem_type.nr_muls() == 0
-			if needs_clone {
-				g.write('string_clone(')
-			}
-			g.expr_with_cast(node.right, node.right_type, array_info.elem_type)
-			if needs_clone {
-				g.write(')')
+			if array_info.elem_type.has_flag(.option) {
+				g.expr_with_opt(node.right, node.right_type, array_info.elem_type)
+			} else {
+				// if g.autofree
+				needs_clone := !g.is_builtin_mod
+					&& array_info.elem_type.idx() == ast.string_type_idx
+					&& array_info.elem_type.nr_muls() == 0
+				if needs_clone {
+					g.write('string_clone(')
+				}
+				g.expr_with_cast(node.right, node.right_type, array_info.elem_type)
+				if needs_clone {
+					g.write(')')
+				}
 			}
 			if elem_is_array_var {
 				g.write(')')

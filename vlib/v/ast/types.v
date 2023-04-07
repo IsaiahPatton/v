@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2022 Alexander Medvednikov. All rights reserved.
+// Copyright (c) 2019-2023 Alexander Medvednikov. All rights reserved.
 // Use of this source code is governed by an MIT license
 // that can be found in the LICENSE file.
 //
@@ -94,6 +94,7 @@ pub mut:
 	kind          Kind
 	name          string // the internal & source name of the type, i.e. `[5]int`.
 	cname         string // the name with no dots for use in the generated C code
+	rname         string // the raw name
 	methods       []Fn
 	generic_types []Type
 	mod           string
@@ -1491,14 +1492,14 @@ pub fn (t &TypeSymbol) symbol_name_except_generic() string {
 }
 
 pub fn (t &TypeSymbol) embed_name() string {
-	// main.Abc[int] => Abc[int]
-	mut embed_name := t.name.split('.').last()
-	// remove generic part from name
-	// Abc[int] => Abc
-	if embed_name.contains('[') {
-		embed_name = embed_name.split('[')[0]
+	if t.name.contains('[') {
+		// Abc[int] => Abc
+		// main.Abc[main.Enum] => Abc
+		return t.name.split('[')[0].split('.').last()
+	} else {
+		// main.Abc => Abc
+		return t.name.split('.').last()
 	}
-	return embed_name
 }
 
 pub fn (t &TypeSymbol) has_method(name string) bool {

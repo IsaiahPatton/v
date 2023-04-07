@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2022 Alexander Medvednikov. All rights reserved.
+// Copyright (c) 2019-2023 Alexander Medvednikov. All rights reserved.
 // Use of this source code is governed by an MIT license
 // that can be found in the LICENSE file.
 [has_globals]
@@ -1191,7 +1191,11 @@ pub fn (mut t Table) find_or_register_multi_return(mr_typs []Type) int {
 	for i, mr_typ in mr_typs {
 		mr_type_sym := t.sym(mktyp(mr_typ))
 		ref, cref := if mr_typ.is_ptr() { '&', 'ref_' } else { '', '' }
+		name += if mr_typ.has_flag(.option) { '?' } else { '' }
+		name += if mr_typ.has_flag(.result) { '!' } else { '' }
 		name += '${ref}${mr_type_sym.name}'
+		cname += if mr_typ.has_flag(.option) { '_option' } else { '' }
+		cname += if mr_typ.has_flag(.result) { '_result' } else { '' }
 		cname += '_${cref}${mr_type_sym.cname}'
 		if i < mr_typs.len - 1 {
 			name += ', '
@@ -1710,6 +1714,7 @@ pub fn (mut t Table) resolve_generic_to_concrete(generic_type Type, generic_name
 		Struct, Interface, SumType {
 			if sym.info.is_generic {
 				mut nrt := '${sym.name}['
+				mut rnrt := '${sym.rname}['
 				mut t_generic_names := generic_names.clone()
 				mut t_concrete_types := concrete_types.clone()
 				if sym.generic_types.len > 0 && sym.generic_types.len == sym.info.generic_types.len
@@ -1740,17 +1745,23 @@ pub fn (mut t Table) resolve_generic_to_concrete(generic_type Type, generic_name
 					{
 						gts := t.sym(ct)
 						nrt += gts.name
+						rnrt += gts.name
 						if i != sym.info.generic_types.len - 1 {
 							nrt += ', '
+							rnrt += ', '
 						}
 					} else {
 						return none
 					}
 				}
 				nrt += ']'
+				rnrt += ']'
 				mut idx := t.type_idxs[nrt]
 				if idx == 0 {
-					idx = t.add_placeholder_type(nrt, .v)
+					idx = t.type_idxs[rnrt]
+					if idx == 0 {
+						idx = t.add_placeholder_type(nrt, .v)
+					}
 				}
 				return new_type(idx).derive_add_muls(generic_type).clear_flag(.generic)
 			}
@@ -2094,7 +2105,7 @@ pub fn (mut t Table) generic_insts_to_concrete() {
 					}
 					mut fields := parent_info.fields.clone()
 					if parent_info.generic_types.len == info.concrete_types.len {
-						generic_names := parent_info.generic_types.map(t.sym(it).name)
+						generic_names := t.get_generic_names(parent_info.generic_types)
 						for i in 0 .. fields.len {
 							if fields[i].typ.has_flag(.generic) {
 								if fields[i].typ.idx() != info.parent_idx {
@@ -2140,7 +2151,7 @@ pub fn (mut t Table) generic_insts_to_concrete() {
 					}
 					if parent_info.generic_types.len == info.concrete_types.len {
 						mut fields := parent_info.fields.clone()
-						generic_names := parent_info.generic_types.map(t.sym(it).name)
+						generic_names := t.get_generic_names(parent_info.generic_types)
 						for i in 0 .. fields.len {
 							if t_typ := t.resolve_generic_to_concrete(fields[i].typ, generic_names,
 								info.concrete_types)
@@ -2198,7 +2209,7 @@ pub fn (mut t Table) generic_insts_to_concrete() {
 					if parent_info.generic_types.len == info.concrete_types.len {
 						mut fields := parent_info.fields.clone()
 						mut variants := parent_info.variants.clone()
-						generic_names := parent_info.generic_types.map(t.sym(it).name)
+						generic_names := t.get_generic_names(parent_info.generic_types)
 						for i in 0 .. fields.len {
 							if t_typ := t.resolve_generic_to_concrete(fields[i].typ, generic_names,
 								info.concrete_types)
@@ -2235,10 +2246,67 @@ pub fn (mut t Table) generic_insts_to_concrete() {
 						util.verror('generic error', 'the number of generic types of sumtype `${parent.name}` is inconsistent with the concrete types')
 					}
 				}
+				FnType {
+					// TODO: Cache function's generic types (parameters and return type) like Struct and Interface etc. do?
+					mut parent_info := parent.info as FnType
+					mut function := parent_info.func
+					mut generic_types := []Type{cap: function.params.len + 1}
+					generic_types << function.params.filter(it.typ.has_flag(.generic)).map(it.typ)
+					if function.return_type.has_flag(.generic) {
+						generic_types << function.return_type
+					}
+					generic_names := t.get_generic_names(generic_types)
+					for mut param in function.params {
+						if param.typ.has_flag(.generic) {
+							if t_typ := t.resolve_generic_to_concrete(param.typ, generic_names,
+								info.concrete_types)
+							{
+								param.typ = t_typ
+							}
+						}
+					}
+					if function.return_type.has_flag(.generic) {
+						if t_typ := t.resolve_generic_to_concrete(function.return_type,
+							generic_names, info.concrete_types)
+						{
+							function.return_type = t_typ
+						}
+					}
+					sym.info = FnType{
+						...parent_info
+						func: function
+					}
+					sym.is_pub = true
+					sym.kind = parent.kind
+				}
 				else {}
 			}
 		}
 	}
+}
+
+// Extracts all type names from given types, notice that MultiReturn will be decompose
+// and will not included in returned string
+pub fn (t &Table) get_generic_names(generic_types []Type) []string {
+	mut generic_names := []string{cap: generic_types.len}
+	for typ in generic_types {
+		if !typ.has_flag(.generic) {
+			continue
+		}
+
+		sym := t.sym(typ)
+		info := sym.info
+
+		match info {
+			MultiReturn {
+				generic_names << t.get_generic_names(info.types)
+			}
+			else {
+				generic_names << sym.name
+			}
+		}
+	}
+	return generic_names
 }
 
 pub fn (t &Table) is_comptime_type(x Type, y ComptimeType) bool {
@@ -2274,6 +2342,9 @@ pub fn (t &Table) is_comptime_type(x Type, y ComptimeType) bool {
 		}
 		.function {
 			return x_kind == .function
+		}
+		.option {
+			return x.has_flag(.option)
 		}
 	}
 }
