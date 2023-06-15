@@ -26,9 +26,17 @@ fn (mut c Checker) assign_stmt(mut node ast.AssignStmt) {
 				&& node.left[i] in [ast.Ident, ast.SelectorExpr] && !node.left[i].is_blank_ident() {
 				c.expected_type = c.expr(node.left[i])
 			}
-			right_type := c.expr(right)
+			mut right_type := c.expr(right)
 			if right in [ast.CallExpr, ast.IfExpr, ast.LockExpr, ast.MatchExpr, ast.DumpExpr] {
 				c.fail_if_unreadable(right, right_type, 'right-hand side of assignment')
+			}
+			right_type_sym := c.table.sym(right_type)
+			// fixed array returns an struct, but when assigning it must be the array type
+			if right_type_sym.kind == .array_fixed
+				&& (right_type_sym.info as ast.ArrayFixed).is_fn_ret {
+				info := right_type_sym.info as ast.ArrayFixed
+				right_type = c.table.find_or_register_array_fixed(info.elem_type, info.size,
+					info.size_expr, false)
 			}
 			if i == 0 {
 				right_type0 = right_type
@@ -36,7 +44,6 @@ fn (mut c Checker) assign_stmt(mut node ast.AssignStmt) {
 					c.check_expr_opt_call(right, right_type0),
 				]
 			}
-			right_type_sym := c.table.sym(right_type)
 			if right_type_sym.kind == .multi_return {
 				if node.right.len > 1 {
 					c.error('cannot use multi-value ${right_type_sym.name} in single-value context',
@@ -181,6 +188,19 @@ fn (mut c Checker) assign_stmt(mut node ast.AssignStmt) {
 			} else if mut right is ast.PrefixExpr {
 				if right.op == .amp && right.right is ast.StructInit {
 					right_type = c.expr(right)
+				} else if right.op == .arrow {
+					right_type = c.expr(right)
+					right_type_sym := c.table.sym(right_type)
+					if right_type_sym.kind == .array_fixed
+						&& (right_type_sym.info as ast.ArrayFixed).is_fn_ret {
+						info := right_type_sym.info as ast.ArrayFixed
+						right_type = c.table.find_or_register_array_fixed(info.elem_type,
+							info.size, info.size_expr, false)
+					}
+				}
+			} else if mut right is ast.Ident {
+				if right.kind == .function {
+					c.expr(right)
 				}
 			}
 			if right.is_auto_deref_var() {
@@ -221,6 +241,13 @@ fn (mut c Checker) assign_stmt(mut node ast.AssignStmt) {
 			// 	c.error('cannot assign a `none` value to a non-option variable', right.pos())
 			// }
 		}
+		if mut left is ast.Ident
+			&& (left as ast.Ident).info is ast.IdentVar && right is ast.Ident && (right as ast.Ident).name in c.global_names {
+			ident_var_info := left.info as ast.IdentVar
+			if ident_var_info.share == .shared_t {
+				c.error('cannot assign global variable to shared variable', right.pos())
+			}
+		}
 		if right_type.is_ptr() && left_type.is_ptr() {
 			if mut right is ast.Ident {
 				if mut right.obj is ast.Var {
@@ -247,7 +274,7 @@ fn (mut c Checker) assign_stmt(mut node ast.AssignStmt) {
 		if !is_decl && left is ast.Ident && !is_blank_ident && !left_type.is_real_pointer()
 			&& right_type.is_real_pointer() && !right_type.has_flag(.shared_f) {
 			left_sym := c.table.sym(left_type)
-			if left_sym.kind != .function {
+			if left_sym.kind !in [.function, .array] {
 				c.warn(
 					'cannot assign a reference to a value (this will be an error soon) left=${c.table.type_str(left_type)} ${left_type.is_ptr()} ' +
 					'right=${c.table.type_str(right_type)} ${right_type.is_real_pointer()} ptr=${right_type.is_ptr()}',
@@ -325,11 +352,19 @@ fn (mut c Checker) assign_stmt(mut node ast.AssignStmt) {
 									}
 								}
 								if right is ast.ComptimeSelector {
-									left.obj.ct_type_var = .field_var
-									left.obj.typ = c.comptime_fields_default_type
+									if is_decl {
+										left.obj.ct_type_var = .field_var
+										left.obj.typ = c.comptime_fields_default_type
+									}
 								} else if right is ast.Ident
 									&& (right as ast.Ident).obj is ast.Var && (right as ast.Ident).or_expr.kind == .absent {
-									left.obj.ct_type_var = ((right as ast.Ident).obj as ast.Var).ct_type_var
+									if ((right as ast.Ident).obj as ast.Var).ct_type_var != .no_comptime {
+										ctyp := c.get_comptime_var_type(right)
+										if ctyp != ast.void_type {
+											left.obj.ct_type_var = ((right as ast.Ident).obj as ast.Var).ct_type_var
+											left.obj.typ = ctyp
+										}
+									}
 								} else if right is ast.DumpExpr
 									&& (right as ast.DumpExpr).expr is ast.ComptimeSelector {
 									left.obj.ct_type_var = .field_var
@@ -466,7 +501,7 @@ fn (mut c Checker) assign_stmt(mut node ast.AssignStmt) {
 			}
 		}
 		if left_sym.kind == .map && node.op in [.assign, .decl_assign] && right_sym.kind == .map
-			&& !left.is_blank_ident() && right.is_lvalue()
+			&& !left.is_blank_ident() && right.is_lvalue() && right !is ast.ComptimeSelector
 			&& (!right_type.is_ptr() || (right is ast.Ident && right.is_auto_deref_var())) {
 			// Do not allow `a = b`
 			c.error('cannot copy map: call `move` or `clone` method (or use a reference)',
@@ -672,6 +707,13 @@ fn (mut c Checker) assign_stmt(mut node ast.AssignStmt) {
 				}
 			}
 		}
+		if left_sym.kind == .struct_ && !(left_sym.info as ast.Struct).is_anon
+			&& right is ast.StructInit && (right as ast.StructInit).is_anon {
+			c.error('cannot assign anonymous `struct` to a typed `struct`', right.pos())
+		}
+		if right_sym.kind == .alias && right_sym.name == 'byte' {
+			c.warn('byte is deprecated, use u8 instead', right.pos())
+		}
 	}
 	// this needs to run after the assign stmt left exprs have been run through checker
 	// so that ident.obj is set
@@ -690,13 +732,22 @@ fn (mut c Checker) assign_stmt(mut node ast.AssignStmt) {
 			c.expr(right_node.right)
 			c.inside_ref_lit = old_inside_ref_lit
 			if right_node.op == .amp {
-				if right_node.right is ast.Ident {
-					if right_node.right.obj is ast.Var {
-						v := right_node.right.obj
+				expr := if right_node.right is ast.ParExpr {
+					mut expr_ := right_node.right.expr
+					for mut expr_ is ast.ParExpr {
+						expr_ = expr_.expr
+					}
+					expr_
+				} else {
+					right_node.right
+				}
+				if expr is ast.Ident {
+					if expr.obj is ast.Var {
+						v := expr.obj
 						right_type0 = v.typ
 					}
-					if !c.inside_unsafe && assigned_var.is_mut() && !right_node.right.is_mut() {
-						c.error('`${right_node.right.name}` is immutable, cannot have a mutable reference to it',
+					if !c.inside_unsafe && assigned_var.is_mut() && !expr.is_mut() {
+						c.error('`${expr.name}` is immutable, cannot have a mutable reference to it',
 							right_node.pos)
 					}
 				}

@@ -633,9 +633,9 @@ pub fn (s string) u64() u64 {
 
 // parse_uint is like `parse_int` but for unsigned numbers
 //
-// This method directly exposes the `parse_int` function from `strconv`
+// This method directly exposes the `parse_uint` function from `strconv`
 // as a method on `string`. For more advanced features,
-// consider calling `strconv.common_parse_int` directly.
+// consider calling `strconv.common_parse_uint` directly.
 [inline]
 pub fn (s string) parse_uint(_base int, _bit_size int) !u64 {
 	return strconv.parse_uint(s, _base, _bit_size)
@@ -654,9 +654,9 @@ pub fn (s string) parse_uint(_base int, _bit_size int) !u64 {
 // correspond to int, int8, int16, int32, and int64.
 // If bitSize is below 0 or above 64, an error is returned.
 //
-// This method directly exposes the `parse_uint` function from `strconv`
+// This method directly exposes the `parse_int` function from `strconv`
 // as a method on `string`. For more advanced features,
-// consider calling `strconv.common_parse_uint` directly.
+// consider calling `strconv.common_parse_int` directly.
 [inline]
 pub fn (s string) parse_int(_base int, _bit_size int) !i64 {
 	return strconv.parse_int(s, _base, _bit_size)
@@ -725,15 +725,9 @@ fn (s string) + (a string) string {
 		str: unsafe { malloc_noscan(new_len + 1) }
 		len: new_len
 	}
-	for j in 0 .. s.len {
-		unsafe {
-			res.str[j] = s.str[j]
-		}
-	}
-	for j in 0 .. a.len {
-		unsafe {
-			res.str[s.len + j] = a.str[j]
-		}
+	unsafe {
+		vmemcpy(res.str, s.str, s.len)
+		vmemcpy(res.str + s.len, a.str, a.len)
 	}
 	unsafe {
 		res.str[new_len] = 0 // V strings are not null terminated, but just in case
@@ -1057,12 +1051,8 @@ pub fn (s string) substr(start int, end int) string {
 		str: unsafe { malloc_noscan(len + 1) }
 		len: len
 	}
-	for i in 0 .. len {
-		unsafe {
-			res.str[i] = s.str[start + i]
-		}
-	}
 	unsafe {
+		vmemcpy(res.str, s.str + start, len)
 		res.str[len] = 0
 	}
 	return res
@@ -1083,12 +1073,8 @@ pub fn (s string) substr_with_check(start int, end int) !string {
 		str: unsafe { malloc_noscan(len + 1) }
 		len: len
 	}
-	for i in 0 .. len {
-		unsafe {
-			res.str[i] = s.str[start + i]
-		}
-	}
 	unsafe {
+		vmemcpy(res.str, s.str + start, len)
 		res.str[len] = 0
 	}
 	return res
@@ -1120,14 +1106,7 @@ pub fn (s string) substr_ni(_start int, _end int) string {
 	}
 
 	if start > s.len || end < start {
-		mut res := string{
-			str: unsafe { malloc_noscan(1) }
-			len: 0
-		}
-		unsafe {
-			res.str[0] = 0
-		}
-		return res
+		return ''
 	}
 
 	len := end - start
@@ -1137,12 +1116,8 @@ pub fn (s string) substr_ni(_start int, _end int) string {
 		str: unsafe { malloc_noscan(len + 1) }
 		len: len
 	}
-	for i in 0 .. len {
-		unsafe {
-			res.str[i] = s.str[start + i]
-		}
-	}
 	unsafe {
+		vmemcpy(res.str, s.str + start, len)
 		res.str[len] = 0
 	}
 	return res
@@ -1863,6 +1838,7 @@ pub fn (s &string) free() {
 	unsafe {
 		// C.printf(c's: %x %s\n', s.str, s.str)
 		free(s.str)
+		s.str = nil
 	}
 	s.is_lit = -98761234
 }
@@ -2077,10 +2053,8 @@ pub fn (s string) repeat(count int) string {
 	}
 	mut ret := unsafe { malloc_noscan(s.len * count + 1) }
 	for i in 0 .. count {
-		for j in 0 .. s.len {
-			unsafe {
-				ret[i * s.len + j] = s[j]
-			}
+		unsafe {
+			vmemcpy(ret + i * s.len, s.str, s.len)
 		}
 	}
 	new_len := s.len * count

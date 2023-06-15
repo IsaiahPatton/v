@@ -170,7 +170,40 @@ fn (mut g Gen) fixed_array_init(node ast.ArrayInit, array_type Type, var_name st
 			g.expr(node.default_expr)
 		}
 	} else {
-		g.write('0')
+		elem_sym := g.table.final_sym(node.elem_type)
+		if elem_sym.kind == .map {
+			// fixed array for map -- [N]map[key_type]value_type
+			info := array_type.unaliased_sym.info as ast.ArrayFixed
+			map_info := elem_sym.map_info()
+			g.expr(ast.MapInit{
+				key_type: map_info.key_type
+				value_type: map_info.value_type
+			})
+			for _ in 1 .. info.size {
+				g.write(', ')
+				g.expr(ast.MapInit{
+					key_type: map_info.key_type
+					value_type: map_info.value_type
+				})
+			}
+		} else if elem_sym.kind == .array_fixed {
+			// nested fixed array -- [N][N]type
+			info := array_type.unaliased_sym.info as ast.ArrayFixed
+			arr_info := elem_sym.array_fixed_info()
+			g.expr(ast.ArrayInit{
+				typ: node.elem_type
+				elem_type: arr_info.elem_type
+			})
+			for _ in 1 .. info.size {
+				g.write(', ')
+				g.expr(ast.ArrayInit{
+					typ: node.elem_type
+					elem_type: arr_info.elem_type
+				})
+			}
+		} else {
+			g.write('0')
+		}
 	}
 	g.write('}')
 	if need_tmp_var {
@@ -421,11 +454,23 @@ fn (mut g Gen) gen_array_map(node ast.CallExpr) {
 	ret_sym := g.table.sym(node.return_type)
 	inp_sym := g.table.sym(node.receiver_type)
 	ret_info := ret_sym.info as ast.Array
-	ret_elem_type := g.typ(ret_info.elem_type)
+	mut ret_elem_type := g.typ(ret_info.elem_type)
 	inp_info := inp_sym.info as ast.Array
 	inp_elem_type := g.typ(inp_info.elem_type)
 	if inp_sym.kind != .array {
 		verror('map() requires an array')
+	}
+
+	mut closure_var_decl := ''
+	if node.args[0].expr is ast.SelectorExpr {
+		if node.args[0].expr.typ != ast.void_type {
+			var_sym := g.table.sym(node.args[0].expr.typ)
+			if var_sym.info is ast.FnType {
+				ret_elem_type = 'voidptr'
+				closure_var_decl = g.fn_var_signature(var_sym.info.func.return_type, var_sym.info.func.params.map(it.typ),
+					'ti')
+			}
+		}
 	}
 	g.empty_line = true
 	noscan := g.check_noscan(ret_info.elem_type)
@@ -472,8 +517,23 @@ fn (mut g Gen) gen_array_map(node ast.CallExpr) {
 			g.write('${ret_elem_type} ti = ')
 			g.expr(node.args[0].expr)
 		}
-		else {
+		ast.CastExpr {
+			// value.map(Type(it)) when `value` is a comptime var
+			if expr.expr is ast.Ident && node.left is ast.Ident && g.is_comptime_var(node.left) {
+				ctyp := g.get_comptime_var_type(node.left)
+				if ctyp != ast.void_type {
+					expr.expr_type = g.table.value_type(ctyp)
+				}
+			}
 			g.write('${ret_elem_type} ti = ')
+			g.expr(node.args[0].expr)
+		}
+		else {
+			if closure_var_decl != '' {
+				g.write('${closure_var_decl} = ')
+			} else {
+				g.write('${ret_elem_type} ti = ')
+			}
 			g.expr(node.args[0].expr)
 		}
 	}
@@ -858,22 +918,32 @@ fn (mut g Gen) gen_array_contains_methods() {
 }
 
 // `nums.contains(2)`
-fn (mut g Gen) gen_array_contains(typ ast.Type, left ast.Expr, right ast.Expr) {
-	fn_name := g.get_array_contains_method(typ)
+fn (mut g Gen) gen_array_contains(left_type ast.Type, left ast.Expr, right_type ast.Type, right ast.Expr) {
+	fn_name := g.get_array_contains_method(left_type)
 	g.write('${fn_name}(')
-	g.write(strings.repeat(`*`, typ.nr_muls()))
-	if typ.share() == .shared_t {
+	g.write(strings.repeat(`*`, left_type.nr_muls()))
+	if left_type.share() == .shared_t {
 		g.go_back(1)
 	}
 	g.expr(left)
-	if typ.share() == .shared_t {
+	if left_type.share() == .shared_t {
 		g.write('->val')
 	}
 	g.write(', ')
 	if right.is_auto_deref_var() {
 		g.write('*')
 	}
-	g.expr(right)
+	left_sym := g.table.final_sym(left_type)
+	elem_typ := if left_sym.kind == .array {
+		left_sym.array_info().elem_type
+	} else {
+		left_sym.array_fixed_info().elem_type
+	}
+	if g.table.sym(elem_typ).kind in [.interface_, .sum_type] {
+		g.expr_with_cast(right, right_type, elem_typ)
+	} else {
+		g.expr(right)
+	}
 	g.write(')')
 }
 
@@ -959,12 +1029,17 @@ fn (mut g Gen) gen_array_index(node ast.CallExpr) {
 	if node.args[0].expr.is_auto_deref_var() {
 		g.write('*')
 	}
-	g.expr(node.args[0].expr)
+	elem_typ := g.table.sym(node.left_type).array_info().elem_type
+	if g.table.sym(elem_typ).kind in [.interface_, .sum_type] {
+		g.expr_with_cast(node.args[0].expr, node.args[0].typ, elem_typ)
+	} else {
+		g.expr(node.args[0].expr)
+	}
 	g.write(')')
 }
 
 fn (mut g Gen) gen_array_wait(node ast.CallExpr) {
-	arr := g.table.sym(node.receiver_type)
+	arr := g.table.sym(g.unwrap_generic(node.receiver_type))
 	thread_type := arr.array_info().elem_type
 	thread_sym := g.table.sym(thread_type)
 	thread_ret_type := thread_sym.thread_info().return_type

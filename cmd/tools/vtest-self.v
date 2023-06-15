@@ -86,8 +86,8 @@ const (
 		'do_not_remove',
 		'cmd/tools/vdoc/html_tag_escape_test.v', /* can't locate local module: markdown */
 		'cmd/tools/vdoc/tests/vdoc_file_test.v', /* fails on Windows; order of output is not as expected */
-		'vlib/context/onecontext/onecontext_test.v',
 		'vlib/context/deadline_test.v' /* sometimes blocks */,
+		'vlib/context/onecontext/onecontext_test.v' /* backtrace_symbols is missing. */,
 		'vlib/db/mysql/mysql_orm_test.v' /* mysql not installed */,
 		'vlib/db/pg/pg_orm_test.v' /* pg not installed */,
 	]
@@ -131,6 +131,7 @@ const (
 		'vlib/orm/orm_interface_test.v',
 		'vlib/orm/orm_mut_db_test.v',
 		'vlib/orm/orm_result_test.v',
+		'vlib/orm/orm_custom_operators_test.v',
 		'vlib/db/sqlite/sqlite_test.v',
 		'vlib/db/sqlite/sqlite_orm_test.v',
 		'vlib/db/sqlite/sqlite_vfs_lowlevel_test.v',
@@ -185,6 +186,7 @@ const (
 		'vlib/v/slow_tests/profile/profile_test.v',
 		'vlib/gg/draw_fns_api_test.v',
 		'vlib/v/tests/skip_unused/gg_code.vv',
+		'vlib/v/tests/c_struct_with_reserved_field_name_test.v',
 	]
 	skip_on_ubuntu_musl           = [
 		'do_not_remove',
@@ -207,6 +209,7 @@ const (
 		'vlib/orm/orm_interface_test.v',
 		'vlib/orm/orm_mut_db_test.v',
 		'vlib/orm/orm_result_test.v',
+		'vlib/orm/orm_custom_operators_test.v',
 		'vlib/v/tests/orm_sub_struct_test.v',
 		'vlib/v/tests/orm_sub_array_struct_test.v',
 		'vlib/v/tests/orm_joined_tables_select_test.v',
@@ -243,10 +246,6 @@ const (
 	]
 	skip_on_windows               = [
 		'do_not_remove',
-		'vlib/context/cancel_test.v',
-		'vlib/context/deadline_test.v',
-		'vlib/context/empty_test.v',
-		'vlib/context/value_test.v',
 		'vlib/orm/orm_test.v',
 		'vlib/v/tests/orm_sub_struct_test.v',
 		'vlib/v/tests/orm_joined_tables_select_test.v',

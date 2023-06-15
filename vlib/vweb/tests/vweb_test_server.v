@@ -95,12 +95,34 @@ pub fn (mut app App) form_echo() vweb.Result {
 	return app.ok(app.form['foo'])
 }
 
+['/file_echo'; post]
+pub fn (mut app App) file_echo() vweb.Result {
+	if 'file' !in app.files {
+		app.set_status(500, '')
+		return app.text('no file')
+	}
+
+	return app.text(app.files['file'][0].data)
+}
+
 // Make sure [post] works without the path
 [post]
 pub fn (mut app App) json() vweb.Result {
 	// eprintln('>>>>> received http request at /json is: $app.req')
 	app.set_content_type(app.req.header.get(.content_type) or { '' })
 	return app.ok(app.req.data)
+}
+
+// Custom 404 page
+pub fn (mut app App) not_found() vweb.Result {
+	app.set_status(404, 'Not Found')
+	return app.html('404 on "${app.req.url}"')
+}
+
+[host: 'example.com']
+['/with_host']
+pub fn (mut app App) with_host() vweb.Result {
+	return app.ok('')
 }
 
 pub fn (mut app App) shutdown() vweb.Result {

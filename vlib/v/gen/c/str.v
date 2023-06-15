@@ -54,8 +54,10 @@ fn (mut g Gen) string_inter_literal_sb_optimized(call_expr ast.CallExpr) {
 fn (mut g Gen) gen_expr_to_string(expr ast.Expr, etype ast.Type) {
 	old_inside_opt_or_res := g.inside_opt_or_res
 	g.inside_opt_or_res = true
+	g.expected_fixed_arr = true
 	defer {
 		g.inside_opt_or_res = old_inside_opt_or_res
+		g.expected_fixed_arr = false
 	}
 	is_shared := etype.has_flag(.shared_f)
 	mut typ := etype
@@ -162,7 +164,8 @@ fn (mut g Gen) gen_expr_to_string(expr ast.Expr, etype ast.Type) {
 				g.write('*')
 			}
 			g.expr_with_cast(expr, typ, typ)
-		} else {
+		} else if typ.has_flag(.option) {
+			// only Option fn receive argument
 			g.expr_with_cast(expr, typ, typ)
 		}
 		g.write(')')

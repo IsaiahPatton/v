@@ -428,7 +428,7 @@ pub fn (mut g JsGen) enter_namespace(name string) {
 }
 
 pub fn (mut g JsGen) escape_namespace() {
-	g.ns = &Namespace(0)
+	g.ns = &Namespace(unsafe { nil })
 	g.inside_builtin = false
 }
 
@@ -934,6 +934,9 @@ fn (mut g JsGen) expr(node_ ast.Expr) {
 		}
 		ast.GoExpr {
 			g.gen_go_expr(node)
+		}
+		ast.SpawnExpr {
+			g.gen_spawn_expr(node)
 		}
 		ast.Ident {
 			g.gen_ident(node)
@@ -1813,6 +1816,20 @@ fn (mut g JsGen) gen_for_stmt(it ast.ForStmt) {
 }
 
 fn (mut g JsGen) gen_go_expr(node ast.GoExpr) {
+	if g.pref.output_es5 {
+		verror('No support for goroutines on ES5 output')
+		return
+	}
+	g.writeln('new _v_Promise({promise: new Promise(function(resolve){')
+	g.inc_indent()
+	g.write('resolve(')
+	g.expr(node.call_expr)
+	g.write(');')
+	g.dec_indent()
+	g.writeln('})});')
+}
+
+fn (mut g JsGen) gen_spawn_expr(node ast.SpawnExpr) {
 	if g.pref.output_es5 {
 		verror('No support for goroutines on ES5 output')
 		return

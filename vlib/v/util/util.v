@@ -180,9 +180,13 @@ pub fn launch_tool(is_verbose bool, tool_name string, args []string) {
 			println('Compiling ${tool_name} with: "${compilation_command}"')
 		}
 
+		current_work_dir := os.getwd()
 		retry_max_count := 3
 		for i in 0 .. retry_max_count {
+			// ensure a stable and known working folder, when compiling V's tools, to avoid module lookup problems:
+			os.chdir(vroot) or {}
 			tool_compilation := os.execute(compilation_command)
+			os.chdir(current_work_dir) or {}
 			if tool_compilation.exit_code == 0 {
 				break
 			} else {
@@ -297,7 +301,7 @@ mut:
 
 [unsafe]
 pub fn cached_read_source_file(path string) !string {
-	mut static cache := &SourceCache(0)
+	mut static cache := &SourceCache(unsafe { nil })
 	if cache == unsafe { nil } {
 		cache = &SourceCache{}
 	}
@@ -308,7 +312,7 @@ pub fn cached_read_source_file(path string) !string {
 	if path.len == 0 {
 		unsafe { cache.sources.free() }
 		unsafe { free(cache) }
-		cache = &SourceCache(0)
+		cache = &SourceCache(unsafe { nil })
 		return error('memory source file cache cleared')
 	}
 

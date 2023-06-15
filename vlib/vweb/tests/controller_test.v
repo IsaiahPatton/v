@@ -1,9 +1,6 @@
 import os
 import time
-import json
-import net
 import net.http
-import io
 
 const (
 	sport           = 12382
@@ -91,6 +88,21 @@ fn test_other_path() {
 	assert x.body == 'Other path'
 }
 
+fn test_different_404() {
+	res_app := http.get('http://${localserver}/zxcnbnm') or { panic(err) }
+	assert res_app.status() == .not_found
+	assert res_app.body == '404 From App'
+
+	res_admin := http.get('http://${localserver}/admin/JHKAJA') or { panic(err) }
+	assert res_admin.status() == .not_found
+	assert res_admin.body == '404 From Admin'
+
+	// Other doesn't have a custom 404 so the vweb.Context's not_found is expected
+	res_other := http.get('http://${localserver}/other/unknown') or { panic(err) }
+	assert res_other.status() == .not_found
+	assert res_other.body == '404 Not Found'
+}
+
 fn test_shutdown() {
 	// This test is guaranteed to be called last.
 	// It sends a request to the server to shutdown.
@@ -125,9 +137,9 @@ fn test_duplicate_route() {
 	$if windows {
 		task := spawn os.execute(server_exec_cmd)
 		res := task.wait()
-		assert res.output.contains('V panic: method "duplicate" with route "/admin/duplicate" should be handled by the Controller of "/admin"')
+		assert res.output.contains('V panic: conflicting paths')
 	} $else {
 		res := os.execute(server_exec_cmd)
-		assert res.output.contains('V panic: method "duplicate" with route "/admin/duplicate" should be handled by the Controller of "/admin"')
+		assert res.output.contains('V panic: conflicting paths')
 	}
 }
