@@ -46,8 +46,8 @@ struct Global {
 }
 
 fn (g Gen) is_pure_type(typ ast.Type) bool {
-	if typ.is_pure_int() || typ.is_pure_float() || typ == ast.char_type_idx || typ.is_real_pointer()
-		|| typ.is_bool() {
+	if typ.is_pure_int() || typ.is_pure_float() || typ == ast.char_type_idx
+		|| typ.is_any_kind_of_pointer() || typ.is_bool() {
 		return true
 	}
 	ts := g.table.sym(typ)
@@ -579,7 +579,7 @@ fn (mut g Gen) init_struct(var Var, init ast.StructInit) binaryen.Expression {
 			ts := g.table.sym(var.ast_typ)
 			match ts.info {
 				ast.Struct {
-					if init.fields.len == 0 && !(ts.info.fields.any(it.has_default_expr)) {
+					if init.init_fields.len == 0 && !(ts.info.fields.any(it.has_default_expr)) {
 						// Struct definition contains no default initialisers
 						// AND struct init contains no set values.
 						return g.mknblock('STRUCTINIT(ZERO)', [
@@ -588,7 +588,7 @@ fn (mut g Gen) init_struct(var Var, init ast.StructInit) binaryen.Expression {
 					}
 
 					for i, f in ts.info.fields {
-						field_to_be_set := init.fields.map(it.name).contains(f.name)
+						field_to_be_set := init.init_fields.map(it.name).contains(f.name)
 						fts := g.table.sym(f.typ)
 						if !field_to_be_set {
 							g.get_type_size_align(var.ast_typ)
@@ -613,7 +613,7 @@ fn (mut g Gen) init_struct(var Var, init ast.StructInit) binaryen.Expression {
 				else {}
 			}
 
-			for f in init.fields {
+			for f in init.init_fields {
 				field := ts.find_field(f.name) or {
 					g.w_error('could not find field `${f.name}` on init')
 				}

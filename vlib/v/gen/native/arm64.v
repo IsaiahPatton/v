@@ -1,3 +1,6 @@
+// Copyright (c) 2019-2023 Alexander Medvednikov. All rights reserved.
+// Use of this source code is governed by an MIT license
+// that can be found in the LICENSE file.
 module native
 
 import v.ast
@@ -317,6 +320,10 @@ pub fn (mut c Arm64) gen_arm64_exit(expr ast.Expr) {
 	c.svc()
 }
 
+fn (mut c Arm64) address_size() int {
+	return 8
+}
+
 fn (mut c Arm64) gen_print(s string, fd int) {
 	panic('Arm64.gen_print() is not implemented')
 }
@@ -378,7 +385,8 @@ fn (mut c Arm64) apicall(call ApiCall) {
 }
 
 fn (mut c Arm64) trap() {
-	panic('Arm64.trap() not implemented')
+	c.g.write32(0xcccccccc)
+	c.g.println('trap')
 }
 
 fn (mut c Arm64) leave() {
@@ -437,6 +445,10 @@ fn (mut c Arm64) jmp_back(start i64) {
 
 fn (mut c Arm64) init_struct(var Var, init ast.StructInit) {
 	panic('Arm64.init_struct() not implemented')
+}
+
+fn (mut c Arm64) init_array(var Var, init ast.ArrayInit) {
+	panic('Arm64.init_array() not implemented')
 }
 
 fn (mut c Arm64) load_fp_var(var Var, config VarConfig) {
@@ -509,4 +521,12 @@ fn (mut c Arm64) call_addr_at(addr int, at i64) i64 {
 
 fn (mut c Arm64) gen_concat_expr(expr ast.ConcatExpr) {
 	panic('Arm64.gen_concat_expr() not implemented')
+}
+
+fn (mut c Arm64) cmp_to_stack_top(reg Register) {
+	panic('Arm64.cmp_to_stack_top() not implemented')
+}
+
+fn (mut c Arm64) push(r Register) {
+	panic('Arm64.push() not implemented')
 }

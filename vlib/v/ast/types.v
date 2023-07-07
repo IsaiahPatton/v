@@ -311,6 +311,17 @@ pub fn (t Type) is_ptr() bool {
 }
 
 [inline]
+pub fn (typ Type) is_pointer() bool {
+	// builtin pointer types (voidptr, byteptr, charptr)
+	return typ.idx() in ast.pointer_type_idxs
+}
+
+[inline]
+pub fn (typ Type) is_voidptr() bool {
+	return typ.idx() == ast.voidptr_type_idx
+}
+
+[inline]
 pub fn (t Type) is_any_kind_of_pointer() bool {
 	return (int(t) >> 16) & 0xff > 0 || (u16(t) & 0xffff) in ast.pointer_type_idxs
 }
@@ -469,22 +480,6 @@ pub fn new_type_ptr(idx int, nr_muls int) Type {
 		panic('new_type_ptr: nr_muls must be between 0 & 255')
 	}
 	return (u32(nr_muls) << 16) | u16(idx)
-}
-
-[inline]
-pub fn (typ Type) is_pointer() bool {
-	// builtin pointer types (voidptr, byteptr, charptr)
-	return typ.idx() in ast.pointer_type_idxs
-}
-
-[inline]
-pub fn (typ Type) is_voidptr() bool {
-	return typ.idx() == ast.voidptr_type_idx
-}
-
-[inline]
-pub fn (typ Type) is_real_pointer() bool {
-	return typ.is_ptr() || typ.is_pointer()
 }
 
 [inline]
@@ -700,8 +695,7 @@ pub fn (t &Table) type_kind(typ Type) Kind {
 }
 
 pub fn (t &Table) type_is_for_pointer_arithmetic(typ Type) bool {
-	typ_sym := t.sym(typ)
-	if typ_sym.kind == .struct_ {
+	if t.sym(typ).kind == .struct_ {
 		return false
 	} else {
 		return typ.is_any_kind_of_pointer() || typ.is_int_valptr()
@@ -886,9 +880,8 @@ pub fn (t &TypeSymbol) sumtype_info() SumType {
 }
 
 pub fn (t &TypeSymbol) is_heap() bool {
-	if t.kind == .struct_ {
-		info := t.info as Struct
-		return info.is_heap
+	if t.info is Struct {
+		return t.info.is_heap
 	} else {
 		return false
 	}
@@ -1159,10 +1152,10 @@ pub fn (t &Table) type_to_str(typ Type) string {
 }
 
 // type name in code (for builtin)
-pub fn (mytable &Table) type_to_code(t Type) string {
-	match t {
-		ast.int_literal_type, ast.float_literal_type { return mytable.sym(t).kind.str() }
-		else { return mytable.type_to_str_using_aliases(t, map[string]string{}) }
+pub fn (t &Table) type_to_code(typ Type) string {
+	match typ {
+		ast.int_literal_type, ast.float_literal_type { return t.sym(typ).kind.str() }
+		else { return t.type_to_str_using_aliases(typ, map[string]string{}) }
 	}
 }
 
@@ -1218,7 +1211,7 @@ pub fn (t &Table) type_to_str_using_aliases(typ Type, import_aliases map[string]
 	}
 	// Note, that the duplication of code in some of the match branches here
 	// is VERY deliberate. DO NOT be tempted to use `else {}` instead, because
-	// that strongly reduces the usefullness of the exhaustive checking that
+	// that strongly reduces the usefulness of the exhaustive checking that
 	// match does.
 	//    Using else{} here led to subtle bugs in vfmt discovered *months*
 	// after the original code was written.
@@ -1406,7 +1399,7 @@ fn (t Table) shorten_user_defined_typenames(originalname string, import_aliases 
 	} else {
 		// FIXME: clean this case and remove the following if
 		// because it is an hack to format well the type when
-		// there is a []modul.name
+		// there is a []mod.name
 		if res.contains('[]') {
 			idx := res.index('.') or { -1 }
 			return res[idx + 1..]

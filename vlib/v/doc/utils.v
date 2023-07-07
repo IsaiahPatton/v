@@ -118,7 +118,7 @@ pub fn (mut d Doc) stmt_signature(stmt ast.Stmt) string {
 			return 'module ${stmt.name}'
 		}
 		ast.FnDecl {
-			return stmt.stringify(d.table, d.fmt.cur_mod, d.fmt.mod2alias)
+			return stmt.stringify_fn_decl(d.table, d.fmt.cur_mod, d.fmt.mod2alias)
 		}
 		else {
 			d.fmt.out = strings.new_builder(1000)
@@ -177,7 +177,7 @@ pub fn (mut d Doc) type_to_str(typ ast.Type) string {
 // expr_typ_to_string has the same function as `Doc.typ_to_str`
 // but for `ast.Expr` nodes. The checker will check first the
 // node and it executes the `type_to_str` method.
-pub fn (mut d Doc) expr_typ_to_string(ex ast.Expr) string {
-	expr_typ := d.checker.expr(ex)
+pub fn (mut d Doc) expr_typ_to_string(mut expr ast.Expr) string {
+	expr_typ := d.checker.expr(mut expr)
 	return d.type_to_str(expr_typ)
 }

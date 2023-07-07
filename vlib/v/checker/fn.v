@@ -87,7 +87,7 @@ fn (mut c Checker) fn_decl(mut node ast.FnDecl) {
 		}
 	}
 	if node.language == .v && !c.is_builtin_mod && !node.is_anon {
-		c.check_valid_snake_case(node.name, 'function name', node.pos)
+		c.check_valid_snake_case(node.get_name(), 'function name', node.pos)
 		if !node.is_method && node.mod == 'main' && node.short_name in c.table.builtin_pub_fns {
 			c.error('cannot redefine builtin public function `${node.short_name}`', node.pos)
 		}
@@ -102,6 +102,7 @@ fn (mut c Checker) fn_decl(mut node ast.FnDecl) {
 			}
 		}
 	}
+	c.fn_return_type = node.return_type
 	if node.return_type != ast.void_type {
 		if ct_attr_idx := node.attrs.find_comptime_define() {
 			sexpr := node.attrs[ct_attr_idx].ct_expr.str()
@@ -378,7 +379,7 @@ fn (mut c Checker) fn_decl(mut node ast.FnDecl) {
 		}
 	}
 	c.fn_scope = node.scope
-	c.stmts(node.stmts)
+	c.stmts(mut node.stmts)
 	node_has_top_return := has_top_return(node.stmts)
 	node.has_return = c.returns || node_has_top_return
 	c.check_noreturn_fn_decl(mut node)
@@ -458,12 +459,12 @@ fn (mut c Checker) anon_fn(mut node ast.AnonFn) ast.Type {
 		}
 		node.decl.scope.update_var_type(var.name, var.typ)
 	}
-	c.stmts(node.decl.stmts)
-	c.fn_decl(mut node.decl)
 	if has_generic && node.decl.generic_names.len == 0 {
 		c.error('generic closure fn must specify type parameter, e.g. fn [foo] [T]()',
 			node.decl.pos)
 	}
+	c.stmts(mut node.decl.stmts)
+	c.fn_decl(mut node.decl)
 	return node.typ
 }
 
@@ -513,7 +514,7 @@ fn (mut c Checker) call_expr(mut node ast.CallExpr) ast.Type {
 		}
 	}
 	c.expected_or_type = node.return_type.clear_flag(.result)
-	c.stmts_ending_with_expression(node.or_block.stmts)
+	c.stmts_ending_with_expression(mut node.or_block.stmts)
 	c.expected_or_type = ast.void_type
 
 	if !c.inside_const && c.table.cur_fn != unsafe { nil } && !c.table.cur_fn.is_main
@@ -538,7 +539,7 @@ fn (mut c Checker) call_expr(mut node ast.CallExpr) ast.Type {
 fn (mut c Checker) builtin_args(mut node ast.CallExpr, fn_name string, func ast.Fn) {
 	c.inside_println_arg = true
 	c.expected_type = ast.string_type
-	node.args[0].typ = c.expr(node.args[0].expr)
+	node.args[0].typ = c.expr(mut node.args[0].expr)
 	arg := node.args[0]
 	c.check_expr_opt_call(arg.expr, arg.typ)
 	if arg.typ.is_void() {
@@ -647,7 +648,7 @@ fn (mut c Checker) fn_call(mut node ast.CallExpr, mut continue_check &bool) ast.
 			return ast.void_type
 		}
 
-		typ := c.expr(node.args[0].expr)
+		typ := c.expr(mut node.args[0].expr)
 		tsym := c.table.sym(typ)
 
 		if !tsym.name.starts_with('Promise[') {
@@ -706,7 +707,7 @@ fn (mut c Checker) fn_call(mut node ast.CallExpr, mut continue_check &bool) ast.
 			return ast.void_type
 		}
 		c.expected_type = ast.string_type
-		node.args[1].typ = c.expr(node.args[1].expr)
+		node.args[1].typ = c.expr(mut node.args[1].expr)
 		if node.args[1].typ != ast.string_type {
 			c.error('json.decode: second argument needs to be a string', node.pos)
 		}
@@ -722,7 +723,7 @@ fn (mut c Checker) fn_call(mut node ast.CallExpr, mut continue_check &bool) ast.
 			c.error('`__addr` requires 1 argument', node.pos)
 			return ast.void_type
 		}
-		typ := c.expr(node.args[0].expr)
+		typ := c.expr(mut node.args[0].expr)
 		node.args[0].typ = typ
 		node.return_type = typ.ref()
 		return node.return_type
@@ -732,12 +733,13 @@ fn (mut c Checker) fn_call(mut node ast.CallExpr, mut continue_check &bool) ast.
 	mut found := false
 	mut found_in_args := false
 	// anon fn direct call
-	if mut node.left is ast.AnonFn {
+	if node.left is ast.AnonFn {
 		// it was set to anon for checker errors, clear for gen
 		node.name = ''
-		c.expr(node.left)
-		if node.left.typ != ast.Type(0) {
-			anon_fn_sym := c.table.sym(node.left.typ)
+		c.expr(mut node.left)
+		left := node.left as ast.AnonFn
+		if left.typ != ast.Type(0) {
+			anon_fn_sym := c.table.sym(left.typ)
 			func = (anon_fn_sym.info as ast.FnType).func
 			found = true
 		}
@@ -752,9 +754,10 @@ fn (mut c Checker) fn_call(mut node ast.CallExpr, mut continue_check &bool) ast.
 			c.table.fns[name_prefixed].usages++
 		}
 	}
-	if !found && mut node.left is ast.IndexExpr {
-		c.expr(node.left)
-		sym := c.table.final_sym(node.left.left_type)
+	if !found && node.left is ast.IndexExpr {
+		c.expr(mut node.left)
+		left := node.left as ast.IndexExpr
+		sym := c.table.final_sym(left.left_type)
 		if sym.info is ast.Array {
 			elem_sym := c.table.sym(sym.info.elem_type)
 			if elem_sym.info is ast.FnType {
@@ -789,10 +792,11 @@ fn (mut c Checker) fn_call(mut node ast.CallExpr, mut continue_check &bool) ast.
 			}
 		}
 	}
-	if !found && mut node.left is ast.CallExpr {
-		c.expr(node.left)
-		if node.left.return_type != 0 {
-			sym := c.table.sym(node.left.return_type)
+	if !found && node.left is ast.CallExpr {
+		c.expr(mut node.left)
+		left := node.left as ast.CallExpr
+		if left.return_type != 0 {
+			sym := c.table.sym(left.return_type)
 			if sym.info is ast.FnType {
 				node.return_type = sym.info.func.return_type
 				found = true
@@ -818,7 +822,7 @@ fn (mut c Checker) fn_call(mut node ast.CallExpr, mut continue_check &bool) ast.
 		}
 	}
 	if !found && c.pref.is_vsh {
-		// TOOD: test this hack more extensively
+		// TODO: test this hack more extensively
 		os_name := 'os.${fn_name}'
 		if f := c.table.find_fn(os_name) {
 			if f.generic_names.len == node.concrete_types.len {
@@ -844,8 +848,8 @@ fn (mut c Checker) fn_call(mut node ast.CallExpr, mut continue_check &bool) ast.
 	// check for arg (var) of fn type
 	if !found {
 		mut typ := 0
-		if obj := node.scope.find(node.name) {
-			match obj {
+		if mut obj := node.scope.find(node.name) {
+			match mut obj {
 				ast.GlobalField {
 					typ = obj.typ
 					node.is_fn_var = true
@@ -856,10 +860,10 @@ fn (mut c Checker) fn_call(mut node ast.CallExpr, mut continue_check &bool) ast.
 						typ = obj.smartcasts.last()
 					} else {
 						if obj.typ == 0 {
-							if obj.expr is ast.IfGuardExpr {
-								typ = c.expr(obj.expr.expr)
+							if mut obj.expr is ast.IfGuardExpr {
+								typ = c.expr(mut obj.expr.expr)
 							} else {
-								typ = c.expr(obj.expr)
+								typ = c.expr(mut obj.expr)
 							}
 						} else {
 							typ = obj.typ
@@ -908,7 +912,7 @@ fn (mut c Checker) fn_call(mut node ast.CallExpr, mut continue_check &bool) ast.
 		qualified_const_name := if fn_name.contains('.') { fn_name } else { '${c.mod}.${fn_name}' }
 		if mut obj := c.table.global_scope.find_const(qualified_const_name) {
 			if obj.typ == 0 {
-				obj.typ = c.expr(obj.expr)
+				obj.typ = c.expr(mut obj.expr)
 			}
 			if obj.typ != 0 {
 				sym := c.table.sym(obj.typ)
@@ -943,7 +947,7 @@ fn (mut c Checker) fn_call(mut node ast.CallExpr, mut continue_check &bool) ast.
 				return ast.void_type
 			}
 		}
-		c.error('unknown function: ${fn_name}', node.pos)
+		c.error('unknown function: ${node.get_name()}', node.pos)
 		return ast.void_type
 	}
 	node.is_file_translated = func.is_file_translated
@@ -1001,8 +1005,8 @@ fn (mut c Checker) fn_call(mut node ast.CallExpr, mut continue_check &bool) ast.
 	}
 	// `return error(err)` -> `return err`
 	if node.args.len == 1 && fn_name == 'error' {
-		arg := node.args[0]
-		node.args[0].typ = c.expr(arg.expr)
+		mut arg := node.args[0]
+		node.args[0].typ = c.expr(mut arg.expr)
 		if node.args[0].typ == ast.error_type {
 			c.warn('`error(${arg})` can be shortened to just `${arg}`', node.pos)
 		}
@@ -1039,7 +1043,7 @@ fn (mut c Checker) fn_call(mut node ast.CallExpr, mut continue_check &bool) ast.
 				expected_type = info.elem_type
 				c.expected_type = expected_type
 			}
-			typ := c.expr(call_arg.expr)
+			typ := c.expr(mut call_arg.expr)
 			if i == node.args.len - 1 {
 				if c.table.sym(typ).kind == .array && call_arg.expr !is ast.ArrayDecompose
 					&& c.table.sym(expected_type).kind !in [.sum_type, .interface_]
@@ -1070,9 +1074,9 @@ fn (mut c Checker) fn_call(mut node ast.CallExpr, mut continue_check &bool) ast.
 			continue
 		}
 
-		mut arg_typ := c.check_expr_opt_call(call_arg.expr, c.expr(call_arg.expr))
+		mut arg_typ := c.check_expr_opt_call(call_arg.expr, c.expr(mut call_arg.expr))
 		if call_arg.expr is ast.StructInit {
-			arg_typ = c.expr(call_arg.expr)
+			arg_typ = c.expr(mut call_arg.expr)
 		}
 		node.args[i].typ = arg_typ
 		if c.inside_comptime_for_field {
@@ -1153,7 +1157,7 @@ fn (mut c Checker) fn_call(mut node ast.CallExpr, mut continue_check &bool) ast.
 		// Handle expected interface
 		if final_param_sym.kind == .interface_ {
 			if c.type_implements(arg_typ, final_param_typ, call_arg.expr.pos()) {
-				if !arg_typ.is_ptr() && !arg_typ.is_pointer() && !c.inside_unsafe
+				if !arg_typ.is_any_kind_of_pointer() && !c.inside_unsafe
 					&& arg_typ_sym.kind != .interface_ {
 					c.mark_as_referenced(mut &call_arg.expr, true)
 				}
@@ -1167,7 +1171,7 @@ fn (mut c Checker) fn_call(mut node ast.CallExpr, mut continue_check &bool) ast.
 			}
 			continue
 		}
-		if param.typ.is_ptr() && !param.is_mut && !call_arg.typ.is_real_pointer()
+		if param.typ.is_ptr() && !param.is_mut && !call_arg.typ.is_any_kind_of_pointer()
 			&& call_arg.expr.is_literal() && func.language == .v && !c.pref.translated {
 			c.error('literal argument cannot be passed as reference parameter `${c.table.type_to_str(param.typ)}`',
 				call_arg.pos)
@@ -1296,7 +1300,7 @@ fn (mut c Checker) fn_call(mut node ast.CallExpr, mut continue_check &bool) ast.
 				func.params[i]
 			}
 			c.expected_type = param.typ
-			typ := c.check_expr_opt_call(call_arg.expr, c.expr(call_arg.expr))
+			typ := c.check_expr_opt_call(call_arg.expr, c.expr(mut call_arg.expr))
 
 			if param.typ.has_flag(.generic) && func.generic_names.len == node.concrete_types.len {
 				if unwrap_typ := c.table.resolve_generic_to_concrete(param.typ, func.generic_names,
@@ -1306,7 +1310,7 @@ fn (mut c Checker) fn_call(mut node ast.CallExpr, mut continue_check &bool) ast.
 					unwrap_sym := c.table.sym(unwrap_typ)
 					if unwrap_sym.kind == .interface_ {
 						if c.type_implements(utyp, unwrap_typ, call_arg.expr.pos()) {
-							if !utyp.is_ptr() && !utyp.is_pointer() && !c.inside_unsafe
+							if !utyp.is_any_kind_of_pointer() && !c.inside_unsafe
 								&& c.table.sym(utyp).kind != .interface_ {
 								c.mark_as_referenced(mut &call_arg.expr, true)
 							}
@@ -1507,8 +1511,18 @@ fn (mut c Checker) resolve_fn_generic_args(func ast.Fn, mut node ast.CallExpr) [
 	return concrete_types
 }
 
+// cast_fixed_array_ret casts a ArrayFixed type created to return to a non returning one
+fn (mut c Checker) cast_fixed_array_ret(typ ast.Type, sym ast.TypeSymbol) ast.Type {
+	if sym.kind == .array_fixed && (sym.info as ast.ArrayFixed).is_fn_ret {
+		info := sym.info as ast.ArrayFixed
+		return c.table.find_or_register_array_fixed(info.elem_type, info.size, info.size_expr,
+			false)
+	}
+	return typ
+}
+
 fn (mut c Checker) method_call(mut node ast.CallExpr) ast.Type {
-	left_type := c.expr(node.left)
+	left_type := c.expr(mut node.left)
 	if left_type == ast.void_type {
 		c.error('cannot call a method using an invalid expression', node.pos)
 		return ast.void_type
@@ -1574,7 +1588,7 @@ fn (mut c Checker) method_call(mut node ast.CallExpr) ast.Type {
 					node.pos)
 				return ast.void_type
 			} else {
-				arg_type := c.expr(node.args[0].expr)
+				arg_type := c.expr(mut node.args[0].expr)
 				if arg_type !in [ast.int_type, ast.int_literal_type] {
 					c.error('the first argument of `array.insert()` should be integer',
 						node.args[0].expr.pos())
@@ -1589,8 +1603,8 @@ fn (mut c Checker) method_call(mut node ast.CallExpr) ast.Type {
 			}
 		}
 		info := left_sym.info as ast.Array
-		arg_expr := if method_name == 'insert' { node.args[1].expr } else { node.args[0].expr }
-		arg_type := c.expr(arg_expr)
+		mut arg_expr := if method_name == 'insert' { node.args[1].expr } else { node.args[0].expr }
+		arg_type := c.expr(mut arg_expr)
 		arg_sym := c.table.sym(arg_type)
 		if !c.check_types(arg_type, info.elem_type) && !c.check_types(left_type, arg_type) {
 			c.error('cannot ${method_name} `${arg_sym.name}` to `${left_sym.name}`', arg_expr.pos())
@@ -1709,14 +1723,19 @@ fn (mut c Checker) method_call(mut node ast.CallExpr) ast.Type {
 				mut earg_types := []ast.Type{}
 
 				for i, mut arg in node.args {
-					targ := c.check_expr_opt_call(arg.expr, c.expr(arg.expr))
+					targ := c.check_expr_opt_call(arg.expr, c.expr(mut arg.expr))
 					arg.typ = targ
-					earg_types << targ
 
 					param := if info.func.is_variadic && i >= info.func.params.len - 1 {
 						info.func.params.last()
 					} else {
 						info.func.params[i]
+					}
+					if c.table.sym(param.typ).kind == .interface_ {
+						// cannot hide interface expected type to make possible to pass its interface type automatically
+						earg_types << if targ.idx() != param.typ.idx() { param.typ } else { targ }
+					} else {
+						earg_types << targ
 					}
 					param_share := param.typ.share()
 					if param_share == .shared_t
@@ -1883,7 +1902,7 @@ fn (mut c Checker) method_call(mut node ast.CallExpr) ast.Type {
 		exp_arg_sym := c.table.sym(exp_arg_typ)
 		c.expected_type = exp_arg_typ
 
-		mut got_arg_typ := c.check_expr_opt_call(arg.expr, c.expr(arg.expr))
+		mut got_arg_typ := c.check_expr_opt_call(arg.expr, c.expr(mut arg.expr))
 		node.args[i].typ = got_arg_typ
 		if no_type_promotion {
 			if got_arg_typ != exp_arg_typ {
@@ -1920,7 +1939,7 @@ fn (mut c Checker) method_call(mut node ast.CallExpr) ast.Type {
 				expected_type = info.elem_type
 				c.expected_type = expected_type
 			}
-			typ := c.expr(arg.expr)
+			typ := c.expr(mut arg.expr)
 			if i == node.args.len - 1 {
 				if c.table.sym(typ).kind == .array && arg.expr !is ast.ArrayDecompose
 					&& c.table.sym(expected_type).kind !in [.sum_type, .interface_]
@@ -2030,7 +2049,7 @@ fn (mut c Checker) method_call(mut node ast.CallExpr) ast.Type {
 		// Handle expected interface
 		if final_arg_sym.kind == .interface_ {
 			if c.type_implements(got_arg_typ, final_arg_typ, arg.expr.pos()) {
-				if !got_arg_typ.is_ptr() && !got_arg_typ.is_pointer() && !c.inside_unsafe {
+				if !got_arg_typ.is_any_kind_of_pointer() && !c.inside_unsafe {
 					got_arg_typ_sym := c.table.sym(got_arg_typ)
 					if got_arg_typ_sym.kind != .interface_ {
 						c.mark_as_referenced(mut &arg.expr, true)
@@ -2049,7 +2068,7 @@ fn (mut c Checker) method_call(mut node ast.CallExpr) ast.Type {
 		if final_arg_sym.kind == .none_ && param.typ.has_flag(.generic) {
 			c.error('cannot use `none` as generic argument', arg.pos)
 		}
-		if param.typ.is_ptr() && !arg.typ.is_real_pointer() && arg.expr.is_literal()
+		if param.typ.is_ptr() && !arg.typ.is_any_kind_of_pointer() && arg.expr.is_literal()
 			&& !c.pref.translated {
 			c.error('literal argument cannot be passed as reference parameter `${c.table.type_to_str(param.typ)}`',
 				arg.pos)
@@ -2058,7 +2077,7 @@ fn (mut c Checker) method_call(mut node ast.CallExpr) ast.Type {
 			arg) or {
 			// str method, allow type with str method if fn arg is string
 			// Passing an int or a string array produces a c error here
-			// Deleting this condition results in propper V error messages
+			// Deleting this condition results in proper V error messages
 			// if arg_typ_sym.kind == .string && typ_sym.has_method('str') {
 			// continue
 			// }
@@ -2209,16 +2228,23 @@ fn (mut c Checker) set_node_expected_arg_types(mut node ast.CallExpr, func &ast.
 	}
 }
 
-fn (mut c Checker) post_process_generic_fns() {
+fn (mut c Checker) post_process_generic_fns() ! {
+	mut all_generic_fns := map[string]int{}
 	// Loop thru each generic function concrete type.
 	// Check each specific fn instantiation.
 	for i in 0 .. c.file.generic_fns.len {
 		mut node := c.file.generic_fns[i]
 		c.mod = node.mod
 		fkey := node.fkey()
+		all_generic_fns[fkey]++
+		if all_generic_fns[fkey] > generic_fn_cutoff_limit_per_fn {
+			c.error('generic function visited more than ${generic_fn_cutoff_limit_per_fn} times',
+				node.pos)
+			return error('fkey: ${fkey}')
+		}
 		gtypes := c.table.fn_generic_types[fkey]
 		$if trace_post_process_generic_fns ? {
-			eprintln('> post_process_generic_fns ${node.mod} | ${node.name} | fkey: ${fkey} | gtypes: ${gtypes}')
+			eprintln('> post_process_generic_fns ${node.mod} | ${node.name} | fkey: ${fkey} | gtypes: ${gtypes} | c.file.generic_fns.len: ${c.file.generic_fns.len}')
 		}
 		for concrete_types in gtypes {
 			c.table.cur_concrete_types = concrete_types
@@ -2433,7 +2459,7 @@ fn (mut c Checker) map_builtin_method_call(mut node ast.CallExpr, left_type ast.
 				c.error('expected 1 argument, but got ${node.args.len}', node.pos)
 			}
 			info := left_sym.info as ast.Map
-			arg_type := c.expr(node.args[0].expr)
+			arg_type := c.expr(mut node.args[0].expr)
 			c.check_expected_call_arg(arg_type, info.key_type, node.language, node.args[0]) or {
 				c.error('${err.msg()} in argument 1 to `Map.delete`', node.args[0].pos)
 			}
@@ -2521,8 +2547,8 @@ fn (mut c Checker) array_builtin_method_call(mut node ast.CallExpr, left_type as
 	}
 	// map/filter are supposed to have 1 arg only
 	mut arg_type := left_type
-	for arg in node.args {
-		arg_type = c.check_expr_opt_call(arg.expr, c.expr(arg.expr))
+	for mut arg in node.args {
+		arg_type = c.check_expr_opt_call(arg.expr, c.expr(mut arg.expr))
 	}
 	if method_name == 'map' {
 		// check fn
@@ -2581,26 +2607,26 @@ fn (mut c Checker) array_builtin_method_call(mut node ast.CallExpr, left_type as
 		if node.args.len != 1 {
 			c.error('`.contains()` expected 1 argument, but got ${node.args.len}', node.pos)
 		} else if !left_sym.has_method('contains') {
-			arg_typ := c.expr(node.args[0].expr)
+			arg_typ := c.expr(mut node.args[0].expr)
 			c.check_expected_call_arg(arg_typ, elem_typ, node.language, node.args[0]) or {
 				c.error('${err.msg()} in argument 1 to `.contains()`', node.args[0].pos)
 			}
 		}
-		for i, arg in node.args {
-			node.args[i].typ = c.expr(arg.expr)
+		for i, mut arg in node.args {
+			node.args[i].typ = c.expr(mut arg.expr)
 		}
 		node.return_type = ast.bool_type
 	} else if method_name == 'index' {
 		if node.args.len != 1 {
 			c.error('`.index()` expected 1 argument, but got ${node.args.len}', node.pos)
 		} else if !left_sym.has_method('index') {
-			arg_typ := c.expr(node.args[0].expr)
+			arg_typ := c.expr(mut node.args[0].expr)
 			c.check_expected_call_arg(arg_typ, elem_typ, node.language, node.args[0]) or {
 				c.error('${err.msg()} in argument 1 to `.index()`', node.args[0].pos)
 			}
 		}
-		for i, arg in node.args {
-			node.args[i].typ = c.expr(arg.expr)
+		for i, mut arg in node.args {
+			node.args[i].typ = c.expr(mut arg.expr)
 		}
 		node.return_type = ast.int_type
 	} else if method_name in ['first', 'last', 'pop'] {

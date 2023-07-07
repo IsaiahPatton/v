@@ -8,7 +8,7 @@ import v.util
 import v.token
 
 fn (mut g Gen) expr_with_opt_or_block(expr ast.Expr, expr_typ ast.Type, var_expr ast.Expr, ret_typ ast.Type, in_heap bool) {
-	gen_or := expr is ast.Ident && (expr as ast.Ident).or_expr.kind != .absent
+	gen_or := expr is ast.Ident && expr.or_expr.kind != .absent
 	if gen_or {
 		old_inside_opt_or_res := g.inside_opt_or_res
 		g.inside_opt_or_res = true
@@ -17,13 +17,13 @@ fn (mut g Gen) expr_with_opt_or_block(expr ast.Expr, expr_typ ast.Type, var_expr
 			g.write('))')
 		}
 		g.writeln(';')
-		expr_var := if expr is ast.Ident && (expr as ast.Ident).is_auto_heap() {
+		expr_var := if expr is ast.Ident && expr.is_auto_heap() {
 			'(*${expr.name})'
 		} else {
 			'${expr}'
 		}
 		g.writeln('if (${expr_var}.state != 0) { // assign')
-		if expr is ast.Ident && (expr as ast.Ident).or_expr.kind == .propagate_option {
+		if expr is ast.Ident && expr.or_expr.kind == .propagate_option {
 			g.writeln('\tpanic_option_not_set(_SLIT("none"));')
 		} else {
 			g.inside_or_block = true
@@ -33,8 +33,7 @@ fn (mut g Gen) expr_with_opt_or_block(expr ast.Expr, expr_typ ast.Type, var_expr
 			stmts := (expr as ast.Ident).or_expr.stmts
 			// handles stmt block which returns something
 			// e.g. { return none }
-			if stmts.len > 0 && stmts.last() is ast.ExprStmt
-				&& (stmts.last() as ast.ExprStmt).typ != ast.void_type {
+			if stmts.len > 0 && stmts.last() is ast.ExprStmt && stmts.last().typ != ast.void_type {
 				g.gen_or_block_stmts(var_expr.str(), '', stmts, ret_typ, false)
 			} else {
 				// handles stmt block which doesn't returns value
@@ -258,14 +257,14 @@ fn (mut g Gen) assign_stmt(node_ ast.AssignStmt) {
 					key_str := '${val.method_name}.return_type'
 					var_type = g.comptime_var_type_map[key_str] or { var_type }
 					left.obj.typ = var_type
-				} else if is_decl && val is ast.Ident && (val as ast.Ident).info is ast.IdentVar {
+				} else if is_decl && val is ast.Ident && val.info is ast.IdentVar {
 					val_info := (val as ast.Ident).info
 					gen_or = val.or_expr.kind != .absent
 					if val_info.is_option && gen_or {
 						var_type = val_type.clear_flag(.option)
 						left.obj.typ = var_type
 					}
-				} else if val is ast.DumpExpr && (val as ast.DumpExpr).expr is ast.ComptimeSelector {
+				} else if val is ast.DumpExpr && val.expr is ast.ComptimeSelector {
 					key_str := g.get_comptime_selector_key_type(val.expr as ast.ComptimeSelector)
 					if key_str != '' {
 						var_type = g.comptime_var_type_map[key_str] or { var_type }
@@ -273,8 +272,8 @@ fn (mut g Gen) assign_stmt(node_ ast.AssignStmt) {
 						left.obj.typ = var_type
 					}
 				} else if val is ast.IndexExpr {
-					if val.left is ast.Ident && g.is_generic_param_var((val as ast.IndexExpr).left) {
-						ctyp := g.unwrap_generic(g.get_gn_var_type((val as ast.IndexExpr).left as ast.Ident))
+					if val.left is ast.Ident && g.is_generic_param_var(val.left) {
+						ctyp := g.unwrap_generic(g.get_gn_var_type(val.left as ast.Ident))
 						if ctyp != ast.void_type {
 							var_type = ctyp
 							val_type = var_type
@@ -360,10 +359,9 @@ fn (mut g Gen) assign_stmt(node_ ast.AssignStmt) {
 		unaliased_right_sym := g.table.final_sym(unwrapped_val_type)
 		is_fixed_array_var := unaliased_right_sym.kind == .array_fixed && val !is ast.ArrayInit
 			&& (val in [ast.Ident, ast.IndexExpr, ast.CallExpr, ast.SelectorExpr, ast.DumpExpr]
-			|| (val is ast.CastExpr && (val as ast.CastExpr).expr !is ast.ArrayInit)
-			|| (val is ast.PrefixExpr && (val as ast.PrefixExpr).op == .arrow)
-			|| (val is ast.UnsafeExpr && (val as ast.UnsafeExpr).expr is ast.Ident))
-			&& !g.pref.translated
+			|| (val is ast.CastExpr && val.expr !is ast.ArrayInit)
+			|| (val is ast.PrefixExpr && val.op == .arrow)
+			|| (val is ast.UnsafeExpr && val.expr is ast.Ident)) && !g.pref.translated
 		g.is_assign_lhs = true
 		g.assign_op = node.op
 
@@ -572,7 +570,7 @@ fn (mut g Gen) assign_stmt(node_ ast.AssignStmt) {
 						}
 						if !is_used_var_styp {
 							if !val_type.has_flag(.option) && left_sym.info is ast.ArrayFixed
-								&& (left_sym.info as ast.ArrayFixed).is_fn_ret {
+								&& left_sym.info.is_fn_ret {
 								g.write('${styp[3..]} ')
 							} else {
 								g.write('${styp} ')
@@ -668,8 +666,7 @@ fn (mut g Gen) assign_stmt(node_ ast.AssignStmt) {
 							g.write('{0}')
 						}
 					} else {
-						is_option_unwrapped := (val is ast.Ident
-							&& (val as ast.Ident).or_expr.kind != .absent)
+						is_option_unwrapped := val is ast.Ident && val.or_expr.kind != .absent
 						is_option_auto_heap := is_auto_heap && is_option_unwrapped
 						if is_auto_heap {
 							g.write('HEAP(${styp}, (')
@@ -695,7 +692,7 @@ fn (mut g Gen) assign_stmt(node_ ast.AssignStmt) {
 					// var = &auto_heap_var
 					old_is_auto_heap := g.is_option_auto_heap
 					g.is_option_auto_heap = val_type.has_flag(.option) && val is ast.PrefixExpr
-						&& (val as ast.PrefixExpr).right is ast.Ident
+						&& val.right is ast.Ident
 						&& ((val as ast.PrefixExpr).right as ast.Ident).is_auto_heap()
 					defer {
 						g.is_option_auto_heap = old_is_auto_heap
@@ -740,7 +737,7 @@ fn (mut g Gen) gen_multi_return_assign(node &ast.AssignStmt, return_type ast.Typ
 	mr_var_name := 'mr_${node.pos.pos}'
 	mut is_option := return_type.has_flag(.option)
 	mut mr_styp := g.typ(return_type.clear_flag(.result))
-	if node.right[0] is ast.CallExpr && (node.right[0] as ast.CallExpr).or_block.kind != .absent {
+	if node.right[0] is ast.CallExpr && node.right[0].or_block.kind != .absent {
 		is_option = false
 		mr_styp = g.typ(return_type.clear_flags(.option, .result))
 	}

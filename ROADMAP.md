@@ -23,7 +23,7 @@
 - [x] Recursive structs via options: `struct Node { next ?Node }`
 - [x] First class Option type
 - [x] Optional function struct fields
-- [ ] Handle function pointers safely, remove `if function == 0 {`
+- [x] Handle function pointers safely, remove `if function == 0 {`
 - [x] Bundle OpenSSL like GC
 - [x] Anonymous structs
 - [x] Improve vweb: allow separation of logic via "controllers", lots of other fixes
@@ -35,11 +35,13 @@
 - [ ] Parallel parser
 - [ ] Parallel checker
 - [ ] Parallel C compilation
+- [ ] Direct C/C++ interop without generating wrappers
 - [ ] `recover()` from panics
 - [ ] -usecache on by default
 - [ ] -skip-unused on by default
 - [ ] 64/32 bit int depending on arch (will remove array.len limitation on 64 bit systems)
 - [ ] `copy()` builtin function (e.g. for easier conversion from `[]Foo` to `[4]Foo`)
+- [ ] Lambdas: `a.sort(|a, b| a > b)`
 
 ## [Version 1.0]
 

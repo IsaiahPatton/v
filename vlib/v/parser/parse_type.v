@@ -73,7 +73,7 @@ fn (mut p Parser) parse_array_type(expecting token.Kind, is_option bool) ast.Typ
 			p.error_with_pos('fixed size cannot be zero or negative', size_expr.pos())
 		}
 		idx := p.table.find_or_register_array_fixed(elem_type, fixed_size, size_expr,
-			!is_option && (p.inside_fn_return || p.inside_chan_decl))
+			!is_option && p.inside_fn_return)
 		if elem_type.has_flag(.generic) {
 			return ast.new_type(idx).set_flag(.generic)
 		}
@@ -475,7 +475,7 @@ fn (mut p Parser) parse_type() ast.Type {
 			return 0
 		}
 		sym := p.table.sym(typ)
-		if is_option && sym.info is ast.SumType && (sym.info as ast.SumType).is_anon {
+		if is_option && sym.info is ast.SumType && sym.info.is_anon {
 			p.error_with_pos('an inline sum type cannot be an Option', option_pos.extend(p.prev_tok.pos()))
 		}
 	}
@@ -515,7 +515,7 @@ fn (mut p Parser) parse_any_type(language ast.Language, is_ptr bool, check_dot b
 		name = 'C.${name}'
 	} else if language == .js {
 		name = 'JS.${name}'
-	} else if p.peek_tok.kind == .dot && check_dot {
+	} else if p.peek_tok.kind == .dot && check_dot && !name[0].is_capital() {
 		// `module.Type`
 		mut mod := name
 		mut mod_pos := p.tok.pos()
@@ -794,7 +794,7 @@ fn (mut p Parser) parse_generic_inst_type(name string) ast.Type {
 					p.error_with_pos('interface `${parent_sym.name}` is not a generic interface, cannot instantiate to the concrete types',
 						concrete_types_pos)
 				} else if parent_sym.info.generic_types.len != concrete_types.len {
-					p.error_with_pos('the number of generic types of interfce `${parent_sym.name}` is inconsistent with the concrete types',
+					p.error_with_pos('the number of generic types of interface `${parent_sym.name}` is inconsistent with the concrete types',
 						concrete_types_pos)
 				}
 			}

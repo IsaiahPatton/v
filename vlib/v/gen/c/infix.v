@@ -110,7 +110,7 @@ fn (mut g Gen) infix_expr_eq_op(node ast.InfixExpr) {
 		g.gen_plain_infix_expr(node)
 	} else if (left.typ.idx() == ast.string_type_idx || (!has_defined_eq_operator
 		&& left.unaliased.idx() == ast.string_type_idx)) && node.right is ast.StringLiteral
-		&& (node.right as ast.StringLiteral).val == '' {
+		&& node.right.val == '' {
 		// `str == ''` -> `str.len == 0` optimization
 		g.write('(')
 		g.expr(node.left)
@@ -739,7 +739,7 @@ fn (mut g Gen) infix_expr_arithmetic_op(node ast.InfixExpr) {
 		}
 
 		mut right_var := ''
-		if node.right is ast.Ident && (node.right as ast.Ident).or_expr.kind != .absent {
+		if node.right is ast.Ident && node.right.or_expr.kind != .absent {
 			cur_line := g.go_before_stmt(0).trim_space()
 			right_var = g.new_tmp_var()
 			g.write('${g.typ(right.typ)} ${right_var} = ')
@@ -990,7 +990,7 @@ fn (mut g Gen) infix_expr_and_or_op(node ast.InfixExpr) {
 }
 
 fn (mut g Gen) gen_is_none_check(node ast.InfixExpr) {
-	if node.left in [ast.Ident, ast.SelectorExpr] {
+	if node.left in [ast.Ident, ast.SelectorExpr, ast.IndexExpr] {
 		old_inside_opt_or_res := g.inside_opt_or_res
 		g.inside_opt_or_res = true
 		g.expr(node.left)

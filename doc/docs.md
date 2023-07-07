@@ -97,6 +97,7 @@ by using any of the following commands in a terminal:
     * [Trailing struct literal arguments](#trailing-struct-literal-arguments)
     * [Access modifiers](#access-modifiers)
     * [Anonymous structs](#anonymous-structs)
+    * [Static type methods](#static-type-methods)
     * [[noinit] structs](#noinit-structs)
     * [Methods](#methods)
     * [Embedded structs](#embedded-structs)
@@ -168,8 +169,9 @@ by using any of the following commands in a terminal:
     * [Attributes](#attributes)
     * [Conditional compilation](#conditional-compilation)
         * [Compile time pseudo variables](#compile-time-pseudo-variables)
-        * [Compile-time reflection](#compile-time-reflection)
+        * [Compile time reflection](#compile-time-reflection)
         * [Compile time code](#compile-time-code)
+        * [Compile time types](#compile-time-types)
         * [Environment specific files](#environment-specific-files)
     * [Memory-unsafe code](#memory-unsafe-code)
     * [Structs with reference fields](#structs-with-reference-fields)
@@ -2119,6 +2121,42 @@ fn main() {
 }
 ```
 
+To access the result of the function inside a `defer` block the `$res()` expression can be used.
+`$res()` is only used when a single value is returned, while on multi-return the `$res(idx)`
+is parameterized.
+
+```v ignore
+fn (mut app App) auth_middleware() bool {
+	defer {
+		if !$res() {
+			app.response.status_code = 401
+			app.response.body = 'Unauthorized'
+		}
+	}
+	header := app.get_header('Authorization')
+	if header == '' {
+		return false
+	}
+	return true
+}
+
+fn (mut app App) auth_with_user_middleware() (bool, string) {
+	defer {
+		if !$res(0) {
+			app.response.status_code = 401
+			app.response.body = 'Unauthorized'
+		} else {
+			app.user = $res(1)
+		}
+	}
+	header := app.get_header('Authorization')
+	if header == '' {
+		return false, ''
+	}
+	return true, 'TestUser'
+}
+```
+
 ### Goto
 
 V allows unconditionally jumping to a label with `goto`. The label name must be contained
@@ -2395,6 +2433,27 @@ assert book.author.name == 'Samantha Black'
 assert book.author.age == 24
 ```
 
+### Static type methods
+
+V now supports static type methods like `User.new()`. These are defined on a struct via
+`fn [Type name].[function name]` and allow to organize all functions related to a struct:
+
+```v oksyntax
+struct User {}
+
+fn User.new() User {
+	return User{}
+}
+
+user := User.new()
+```
+
+This is an alternative to factory functions like `fn new_user() User {}` and should be used
+instead.
+
+Note, that these are not constructors, but simple functions. V doesn't have constructors or
+classes.
+
 ### `[noinit]` structs
 
 V supports `[noinit]` structs, which are structs that cannot be initialised outside the module
@@ -2473,7 +2532,7 @@ but a short, preferably one letter long, name.
 
 ### Embedded structs
 
-V support embedded structs .
+V supports embedded structs.
 
 ```v
 struct Size {
@@ -2899,7 +2958,7 @@ const (
 		g: 0
 		b: 0
 	}
-	// evaluate function call at compile-time*
+	// evaluate function call at compile time*
 	blue = rgb(0, 0, 255)
 )
 
@@ -5445,10 +5504,12 @@ vm := vmod.decode( @VMOD_FILE ) or { panic(err) }
 eprintln('${vm.name} ${vm.version}\n ${vm.description}')
 ```
 
-### Compile-time reflection
+### Compile time reflection
+
+`$` is used as a prefix for compile time (also referred to as 'comptime') operations.
 
 Having built-in JSON support is nice, but V also allows you to create efficient
-serializers for any data format. V has compile-time `if` and `for` constructs:
+serializers for any data format. V has compile time `if` and `for` constructs:
 
 ```v
 struct User {
@@ -5472,8 +5533,6 @@ See [`examples/compiletime/reflection.v`](/examples/compiletime/reflection.v)
 for a more complete example.
 
 ### Compile time code
-
-`$` is used as a prefix for compile-time operations.
 
 #### `$if` condition
 
@@ -5660,6 +5719,27 @@ x.v:4:5: error: Linux is not supported
     5 | }
     6 |
 ```
+
+### Compile time types
+
+Compile time types group multiple types into a general higher-level type. This is useful in
+functions with generic parameters, where the input type must have a specific property, for example
+the `.len` attribute in arrays.
+
+V supports the following compile time types:
+
+- `$alias` => matches [Type aliases](#type-aliases).
+- `$array` => matches [Arrays](#arrays) and [Fixed Size Arrays](#fixed-size-arrays).
+- `$enum` => matches [Enums](#enums).
+- `$float` => matches `f32`, `f64` and float literals.
+- `$function` => matches [Function Types](#function-types).
+- `$int` => matches `int`, `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `isize`, `usize`
+  and integer literals.
+- `$interface` => matches [Interfaces](#interfaces).
+- `$map` => matches [Maps](#maps).
+- `$option` => matches [Option Types](#optionresult-types-and-error-handling).
+- `$struct` => matches [Structs](#structs).
+- `$sumtype` => matches [Sum Types](#sum-types).
 
 ### Environment specific files
 

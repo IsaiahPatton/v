@@ -259,7 +259,8 @@ fn (mut g Gen) gen_str_for_alias(info ast.Alias, styp string, str_fn_name string
 	if str_method_expects_ptr {
 		g.auto_str_funcs.writeln('\tstring tmp_ds = ${parent_str_fn_name}(&it);')
 	} else {
-		g.auto_str_funcs.writeln('\tstring tmp_ds = ${parent_str_fn_name}(it);')
+		deref, _ := deref_kind(str_method_expects_ptr, info.parent_type.is_ptr(), info.parent_type)
+		g.auto_str_funcs.writeln('\tstring tmp_ds = ${parent_str_fn_name}(${deref}it);')
 	}
 	g.auto_str_funcs.writeln('\tstring res = str_intp(3, _MOV((StrIntpData[]){
 		{_SLIT0, ${c.si_s_code}, {.d_s = indents }},
@@ -578,10 +579,14 @@ fn (mut g Gen) gen_str_for_array(info ast.Array, styp string, str_fn_name string
 				deref, deref_label := deref_kind(str_method_expects_ptr, is_elem_ptr,
 					typ)
 				g.auto_str_funcs.writeln('\t\tstring x = _SLIT("nil");')
-				g.auto_str_funcs.writeln('\t\tif (it != 0) {')
+				if !typ.has_flag(.option) {
+					g.auto_str_funcs.writeln('\t\tif (it != 0) {')
+				}
 				g.auto_str_funcs.writeln('\t\t\tstrings__Builder_write_string(&sb, _SLIT("${deref_label}"));')
 				g.auto_str_funcs.writeln('\t\t\tx = ${elem_str_fn_name}(${deref}it);')
-				g.auto_str_funcs.writeln('\t\t}')
+				if !typ.has_flag(.option) {
+					g.auto_str_funcs.writeln('\t\t}')
+				}
 			} else {
 				g.auto_str_funcs.writeln('\t\tstring x = indent_${elem_str_fn_name}(it, indent_count);')
 			}
@@ -610,10 +615,14 @@ fn (mut g Gen) gen_str_for_array(info ast.Array, styp string, str_fn_name string
 			deref, deref_label := deref_kind(str_method_expects_ptr, is_elem_ptr, typ)
 			if is_elem_ptr {
 				g.auto_str_funcs.writeln('\t\tstring x = _SLIT("nil");')
-				g.auto_str_funcs.writeln('\t\tif (it != 0) {')
+				if !typ.has_flag(.option) {
+					g.auto_str_funcs.writeln('\t\tif (it != 0) {')
+				}
 				g.auto_str_funcs.writeln('\t\t\tstrings__Builder_write_string(&sb, _SLIT("${deref_label}"));')
 				g.auto_str_funcs.writeln('\t\t\tx = ${elem_str_fn_name}(${deref}it);')
-				g.auto_str_funcs.writeln('\t\t}')
+				if !typ.has_flag(.option) {
+					g.auto_str_funcs.writeln('\t\t}')
+				}
 			} else {
 				g.auto_str_funcs.writeln('\t\tstrings__Builder_write_string(&sb, _SLIT("${deref_label}"));')
 				g.auto_str_funcs.writeln('\t\tstring x = ${elem_str_fn_name}(${deref}it);')

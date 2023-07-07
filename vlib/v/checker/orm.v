@@ -20,7 +20,7 @@ fn (mut c Checker) sql_expr(mut node ast.SqlExpr) ast.Type {
 		c.inside_sql = false
 	}
 
-	if !c.check_db_expr(node.db_expr) {
+	if !c.check_db_expr(mut node.db_expr) {
 		return ast.void_type
 	}
 
@@ -40,7 +40,8 @@ fn (mut c Checker) sql_expr(mut node ast.SqlExpr) ast.Type {
 	}
 
 	info := table_sym.info as ast.Struct
-	mut fields := c.fetch_and_verify_orm_fields(info, node.table_expr.pos, table_sym.name)
+	mut fields := c.fetch_and_verify_orm_fields(info, node.table_expr.pos, table_sym.name,
+		node)
 	non_primitive_fields := c.get_orm_non_primitive_fields(fields)
 	mut sub_structs := map[int]ast.SqlExpr{}
 
@@ -111,7 +112,7 @@ fn (mut c Checker) sql_expr(mut node ast.SqlExpr) ast.Type {
 	field_names := fields.map(it.name)
 
 	if node.has_where {
-		c.expr(node.where_expr)
+		c.expr(mut node.where_expr)
 		c.check_expr_has_no_fn_calls_with_non_orm_return_type(&node.where_expr)
 		c.check_where_expr_has_no_pointless_exprs(table_sym, field_names, &node.where_expr)
 	}
@@ -130,38 +131,38 @@ fn (mut c Checker) sql_expr(mut node ast.SqlExpr) ast.Type {
 			return ast.void_type
 		}
 
-		c.expr(node.order_expr)
+		c.expr(mut node.order_expr)
 	}
 
 	if node.has_limit {
-		c.expr(node.limit_expr)
+		c.expr(mut node.limit_expr)
 		c.check_sql_value_expr_is_comptime_with_natural_number_or_expr_with_int_type(mut node.limit_expr,
 			'limit')
 	}
 
 	if node.has_offset {
-		c.expr(node.offset_expr)
+		c.expr(mut node.offset_expr)
 		c.check_sql_value_expr_is_comptime_with_natural_number_or_expr_with_int_type(mut node.offset_expr,
 			'offset')
 	}
-	c.expr(node.db_expr)
+	c.expr(mut node.db_expr)
 
-	c.check_orm_or_expr(node)
+	c.check_orm_or_expr(mut node)
 
 	return node.typ.clear_flag(.result)
 }
 
 fn (mut c Checker) sql_stmt(mut node ast.SqlStmt) ast.Type {
-	if !c.check_db_expr(node.db_expr) {
+	if !c.check_db_expr(mut node.db_expr) {
 		return ast.void_type
 	}
-	node.db_expr_type = c.table.unaliased_type(c.expr(node.db_expr))
+	node.db_expr_type = c.table.unaliased_type(c.expr(mut node.db_expr))
 
 	for mut line in node.lines {
 		c.sql_stmt_line(mut line)
 	}
 
-	c.check_orm_or_expr(node)
+	c.check_orm_or_expr(mut node)
 
 	return ast.void_type
 }
@@ -215,7 +216,8 @@ fn (mut c Checker) sql_stmt_line(mut node ast.SqlStmtLine) ast.Type {
 	}
 
 	info := table_sym.info as ast.Struct
-	mut fields := c.fetch_and_verify_orm_fields(info, node.table_expr.pos, table_sym.name)
+	mut fields := c.fetch_and_verify_orm_fields(info, node.table_expr.pos, table_sym.name,
+		ast.SqlExpr{})
 	mut sub_structs := map[int]ast.SqlStmtLine{}
 	non_primitive_fields := c.get_orm_non_primitive_fields(fields)
 
@@ -269,13 +271,13 @@ fn (mut c Checker) sql_stmt_line(mut node ast.SqlStmtLine) ast.Type {
 	}
 
 	if node.kind == .update {
-		for expr in node.update_exprs {
-			c.expr(expr)
+		for mut expr in node.update_exprs {
+			c.expr(mut expr)
 		}
 	}
 
 	if node.where_expr !is ast.EmptyExpr {
-		c.expr(node.where_expr)
+		c.expr(mut node.where_expr)
 	}
 
 	return ast.void_type
@@ -327,23 +329,38 @@ fn (mut c Checker) check_orm_struct_field_attributes(field ast.StructField) {
 	}
 }
 
-fn (mut c Checker) fetch_and_verify_orm_fields(info ast.Struct, pos token.Pos, table_name string) []ast.StructField {
-	fields := info.fields.filter(fn [mut c] (field ast.StructField) bool {
+fn (mut c Checker) fetch_and_verify_orm_fields(info ast.Struct, pos token.Pos, table_name string, sql_expr ast.SqlExpr) []ast.StructField {
+	field_pos := c.orm_get_field_pos(sql_expr.where_expr)
+	mut fields := []ast.StructField{}
+	for field in info.fields {
 		is_primitive := field.typ.is_string() || field.typ.is_bool() || field.typ.is_number()
-		is_struct := c.table.type_symbols[int(field.typ)].kind == .struct_
-		is_array := c.table.sym(field.typ).kind == .array
-		is_array_with_struct_elements := is_array
-			&& c.table.sym(c.table.sym(field.typ).array_info().elem_type).kind == .struct_
-		has_no_skip_attr := !field.attrs.contains('skip')
-
-		return (is_primitive || is_struct || is_array_with_struct_elements) && has_no_skip_attr
-	})
-
+		fsym := c.table.sym(field.typ)
+		is_struct := fsym.kind == .struct_
+		is_array := fsym.kind == .array
+		elem_sym := if is_array {
+			c.table.sym(fsym.array_info().elem_type)
+		} else {
+			ast.invalid_type_symbol
+		}
+		is_array_with_struct_elements := is_array && elem_sym.kind == .struct_
+		has_skip_attr := field.attrs.contains('skip') || field.attrs.contains_arg('sql', '-')
+		if has_skip_attr {
+			continue
+		}
+		if is_primitive || is_struct || is_array_with_struct_elements {
+			fields << field
+		}
+		if is_array && elem_sym.is_primitive() {
+			c.add_error_detail('')
+			c.add_error_detail(' field name: `${field.name}`')
+			c.add_error_detail(' data type: `${c.table.type_to_str(field.typ)}`')
+			c.orm_error('does not support array of primitive types', field_pos)
+			return []ast.StructField{}
+		}
+	}
 	if fields.len == 0 {
 		c.orm_error('select: empty fields in `${table_name}`', pos)
-		return []ast.StructField{}
 	}
-
 	return fields
 }
 
@@ -486,14 +503,14 @@ fn (_ &Checker) fn_return_type_flag_to_string(typ ast.Type) string {
 	}
 }
 
-fn (mut c Checker) check_orm_or_expr(expr ORMExpr) {
-	if expr is ast.SqlExpr {
+fn (mut c Checker) check_orm_or_expr(mut expr ORMExpr) {
+	if mut expr is ast.SqlExpr {
 		if expr.is_generated {
 			return
 		}
 	}
 
-	return_type := if expr is ast.SqlExpr {
+	return_type := if mut expr is ast.SqlExpr {
 		expr.typ
 	} else {
 		ast.void_type.set_flag(.result)
@@ -508,7 +525,7 @@ fn (mut c Checker) check_orm_or_expr(expr ORMExpr) {
 				expr.pos)
 		}
 	} else {
-		c.check_or_expr(expr.or_expr, return_type.clear_flag(.result), return_type, if expr is ast.SqlExpr {
+		c.check_or_expr(expr.or_expr, return_type.clear_flag(.result), return_type, if mut expr is ast.SqlExpr {
 			expr
 		} else {
 			ast.empty_expr
@@ -517,16 +534,16 @@ fn (mut c Checker) check_orm_or_expr(expr ORMExpr) {
 
 	if expr.or_expr.kind == .block {
 		c.expected_or_type = return_type.clear_flag(.result)
-		c.stmts_ending_with_expression(expr.or_expr.stmts)
+		c.stmts_ending_with_expression(mut expr.or_expr.stmts)
 		c.expected_or_type = ast.void_type
 	}
 }
 
 // check_db_expr checks the `db_expr` implements `orm.Connection` and has no `option` flag.
-fn (mut c Checker) check_db_expr(db_expr &ast.Expr) bool {
+fn (mut c Checker) check_db_expr(mut db_expr ast.Expr) bool {
 	connection_type_index := c.table.find_type_idx(checker.connection_interface_name)
 	connection_typ := ast.Type(connection_type_index)
-	db_expr_type := c.expr(db_expr)
+	db_expr_type := c.expr(mut db_expr)
 
 	// If we didn't find `orm.Connection`, we don't have any imported modules
 	// that depend on `orm` and implement the `orm.Connection` interface.
@@ -605,8 +622,29 @@ fn (_ &Checker) check_field_of_inserting_struct_is_uninitialized(node &ast.SqlSt
 	struct_scope := node.scope.find_var(node.object_var_name) or { return false }
 
 	if struct_scope.expr is ast.StructInit {
-		return struct_scope.expr.fields.filter(it.name == field_name).len == 0
+		return struct_scope.expr.init_fields.filter(it.name == field_name).len == 0
 	}
 
 	return false
+}
+
+fn (c &Checker) orm_get_field_pos(expr &ast.Expr) token.Pos {
+	mut pos := token.Pos{}
+	if expr is ast.InfixExpr {
+		if expr.left is ast.Ident {
+			pos = expr.left.pos
+		} else if expr.left is ast.InfixExpr || expr.left is ast.ParExpr
+			|| expr.left is ast.PrefixExpr {
+			pos = c.orm_get_field_pos(expr.left)
+		} else {
+			pos = expr.left.pos()
+		}
+	} else if expr is ast.ParExpr {
+		pos = c.orm_get_field_pos(expr.expr)
+	} else if expr is ast.PrefixExpr {
+		pos = c.orm_get_field_pos(expr.right)
+	} else {
+		pos = expr.pos()
+	}
+	return pos
 }
