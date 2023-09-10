@@ -11,15 +11,18 @@ fn (mut g Gen) struct_init(node ast.StructInit) {
 	mut is_update_tmp_var := false
 	mut tmp_update_var := ''
 	if node.has_update_expr && !node.update_expr.is_lvalue() {
-		tmp_update_var = g.new_tmp_var()
 		is_update_tmp_var = true
-		s := g.go_before_stmt(0)
-		styp := g.typ(node.update_expr_type)
+
+		tmp_update_var = g.new_tmp_var()
+		s := g.go_before_last_stmt()
 		g.empty_line = true
+
+		styp := g.typ(node.update_expr_type)
 		g.write('${styp} ${tmp_update_var} = ')
 		g.expr(node.update_expr)
 		g.writeln(';')
 		g.empty_line = false
+
 		g.write(s)
 	}
 	unalised_typ := g.table.unaliased_type(node.typ)
@@ -59,7 +62,12 @@ fn (mut g Gen) struct_init(node ast.StructInit) {
 		shared_styp = g.typ(shared_typ)
 		g.writeln('(${shared_styp}*)__dup${shared_styp}(&(${shared_styp}){.mtx = {0}, .val =(${styp}){')
 	} else if is_amp || g.inside_cast_in_heap > 0 {
-		g.write('(${styp}*)memdup(&(${styp}){')
+		if node.typ.has_flag(.option) {
+			basetyp := g.base_type(node.typ)
+			g.write('(${basetyp}*)memdup(&(${basetyp}){')
+		} else {
+			g.write('(${styp}*)memdup(&(${styp}){')
+		}
 	} else if node.typ.is_ptr() {
 		basetyp := g.typ(node.typ.set_nr_muls(0))
 		if is_multiline {
@@ -305,7 +313,12 @@ fn (mut g Gen) struct_init(node ast.StructInit) {
 	if g.is_shared && !g.inside_opt_data && !g.is_arraymap_set {
 		g.write('}, sizeof(${shared_styp}))')
 	} else if is_amp || g.inside_cast_in_heap > 0 {
-		g.write(', sizeof(${styp}))')
+		if node.typ.has_flag(.option) {
+			basetyp := g.base_type(node.typ)
+			g.write(', sizeof(${basetyp}))')
+		} else {
+			g.write(', sizeof(${styp}))')
+		}
 	}
 }
 
@@ -323,7 +336,7 @@ fn (mut g Gen) zero_struct_field(field ast.StructField) bool {
 					break
 				}
 			}
-			if has_option_field {
+			if has_option_field || field.anon_struct_decl.fields.len > 0 {
 				default_init := ast.StructInit{
 					typ: field.typ
 				}
@@ -369,7 +382,6 @@ fn (mut g Gen) zero_struct_field(field ast.StructField) bool {
 				tmp_var)
 			return true
 		}
-
 		g.expr(field.default_expr)
 	} else if field.typ.has_flag(.option) {
 		tmp_var := g.new_tmp_var()
@@ -517,8 +529,6 @@ fn (mut g Gen) struct_decl(s ast.Struct, name string, is_anon bool) {
 	} else {
 		g.type_definitions.writeln('\tEMPTY_STRUCT_DECLARATION;')
 	}
-	// g.type_definitions.writeln('} $name;\n')
-	//
 	ti_attrs := if !g.is_cc_msvc && s.attrs.contains('packed') {
 		'__attribute__((__packed__))'
 	} else {
@@ -528,8 +538,10 @@ fn (mut g Gen) struct_decl(s ast.Struct, name string, is_anon bool) {
 	if !is_anon {
 		g.type_definitions.write_string(';')
 	}
-	g.type_definitions.writeln('\n')
-	g.type_definitions.writeln(post_pragma)
+	g.type_definitions.writeln('')
+	if post_pragma.len > 0 {
+		g.type_definitions.writeln(post_pragma)
+	}
 }
 
 fn (mut g Gen) struct_init_field(sfield ast.StructInitField, language ast.Language) {
@@ -547,17 +559,9 @@ fn (mut g Gen) struct_init_field(sfield ast.StructInitField, language ast.Langua
 		inside_cast_in_heap := g.inside_cast_in_heap
 		g.inside_cast_in_heap = 0 // prevent use of pointers in child structs
 
-		if field_type_sym.kind == .array_fixed && sfield.expr is ast.Ident {
-			fixed_array_info := field_type_sym.info as ast.ArrayFixed
-			g.write('{')
-			for i in 0 .. fixed_array_info.size {
-				g.expr(sfield.expr)
-				g.write('[${i}]')
-				if i != fixed_array_info.size - 1 {
-					g.write(', ')
-				}
-			}
-			g.write('}')
+		if field_type_sym.kind == .array_fixed && sfield.expr in [ast.Ident, ast.SelectorExpr] {
+			info := field_type_sym.info as ast.ArrayFixed
+			g.fixed_array_var_init(sfield.expr, info.size)
 		} else {
 			if sfield.typ != ast.voidptr_type && sfield.typ != ast.nil_type
 				&& (sfield.expected_type.is_ptr() && !sfield.expected_type.has_flag(.shared_f))

@@ -9,8 +9,16 @@ pub struct Transformer {
 pub mut:
 	index &IndexState
 	table &ast.Table = unsafe { nil }
+	file  &ast.File  = unsafe { nil }
 mut:
-	is_assert bool
+	is_assert   bool
+	inside_dump bool
+}
+
+fn (mut t Transformer) trace[T](fbase string, x &T) {
+	if t.file.path_base == fbase {
+		println('> t.trace | ${fbase:-10s} | ${voidptr(x):16} | ${x}')
+	}
 }
 
 pub fn new_transformer(pref_ &pref.Preferences) &Transformer {
@@ -37,6 +45,7 @@ pub fn (mut t Transformer) transform_files(ast_files []&ast.File) {
 }
 
 pub fn (mut t Transformer) transform(mut ast_file ast.File) {
+	t.file = ast_file
 	for mut stmt in ast_file.stmts {
 		stmt = t.stmt(mut stmt)
 	}
@@ -513,6 +522,9 @@ pub fn (mut t Transformer) interface_decl(mut node ast.InterfaceDecl) ast.Stmt {
 }
 
 pub fn (mut t Transformer) expr(mut node ast.Expr) ast.Expr {
+	if t.inside_dump {
+		return node
+	}
 	match mut node {
 		ast.AnonFn {
 			node.decl = t.stmt(mut node.decl) as ast.FnDecl
@@ -563,7 +575,10 @@ pub fn (mut t Transformer) expr(mut node ast.Expr) ast.Expr {
 			}
 		}
 		ast.DumpExpr {
+			old_inside_dump := t.inside_dump
+			t.inside_dump = true
 			node.expr = t.expr(mut node.expr)
+			t.inside_dump = old_inside_dump
 		}
 		ast.GoExpr {
 			node.call_expr = t.expr(mut node.call_expr) as ast.CallExpr
@@ -666,6 +681,22 @@ pub fn (mut t Transformer) expr(mut node ast.Expr) ast.Expr {
 		ast.UnsafeExpr {
 			node.expr = t.expr(mut node.expr)
 		}
+		// segfaults with vlib/v/tests/const_fixed_array_containing_references_to_itself_test.v
+		/*
+		ast.Ident {
+			mut obj := node.obj
+			if obj !in [ast.Var, ast.ConstField, ast.GlobalField, ast.AsmRegister] {
+				obj = node.scope.find(node.name) or { return node }
+			}
+
+			match mut obj {
+				ast.ConstField {
+					obj.expr = t.expr(mut obj.expr)
+				}
+				else {}
+			}
+		}
+		*/
 		else {}
 	}
 	return node
@@ -678,9 +709,41 @@ pub fn (mut t Transformer) call_expr(mut node ast.CallExpr) ast.Expr {
 	return node
 }
 
+fn (mut t Transformer) trans_const_value_to_literal(mut expr ast.Expr) {
+	mut expr_ := expr
+	if mut expr_ is ast.Ident {
+		if mut obj := t.table.global_scope.find_const(expr_.mod + '.' + expr_.name) {
+			if mut obj.expr is ast.BoolLiteral {
+				expr = obj.expr
+			} else if mut obj.expr is ast.IntegerLiteral {
+				expr = obj.expr
+			} else if mut obj.expr is ast.FloatLiteral {
+				expr = obj.expr
+			} else if mut obj.expr is ast.StringLiteral {
+				expr = obj.expr
+			} else if mut obj.expr is ast.InfixExpr {
+				folded_expr := t.infix_expr(mut obj.expr)
+				if folded_expr is ast.BoolLiteral {
+					expr = folded_expr
+				} else if folded_expr is ast.IntegerLiteral {
+					expr = folded_expr
+				} else if folded_expr is ast.FloatLiteral {
+					expr = folded_expr
+				} else if folded_expr is ast.StringLiteral {
+					expr = folded_expr
+				}
+			}
+		}
+	}
+}
+
 pub fn (mut t Transformer) infix_expr(mut node ast.InfixExpr) ast.Expr {
 	node.left = t.expr(mut node.left)
 	node.right = t.expr(mut node.right)
+	if !t.pref.translated {
+		t.trans_const_value_to_literal(mut node.left)
+		t.trans_const_value_to_literal(mut node.right)
+	}
 
 	mut pos := node.left.pos()
 	pos.extend(node.pos)

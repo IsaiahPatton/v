@@ -381,6 +381,7 @@ pub:
 	language     Language
 	is_union     bool
 	attrs        []Attr
+	pre_comments []Comment
 	end_comments []Comment
 	embeds       []Embed
 pub mut:
@@ -531,10 +532,11 @@ pub:
 	method_idx            int
 	rec_mut               bool // is receiver mutable
 	rec_share             ShareType
-	language              Language  // V, C, JS
-	file_mode             Language  // whether *the file*, where a function was a '.c.v', '.js.v' etc.
-	no_body               bool      // just a definition `fn C.malloc()`
-	is_builtin            bool      // this function is defined in builtin/strconv
+	language              Language // V, C, JS
+	file_mode             Language // whether *the file*, where a function was a '.c.v', '.js.v' etc.
+	no_body               bool     // just a definition `fn C.malloc()`
+	is_builtin            bool     // this function is defined in builtin/strconv
+	name_pos              token.Pos
 	body_pos              token.Pos // function bodys position
 	file                  string
 	generic_names         []string
@@ -633,7 +635,8 @@ pub:
 	type_pos    token.Pos
 	is_hidden   bool // interface first arg
 pub mut:
-	typ Type
+	typ      Type
+	comments []Comment
 }
 
 pub fn (p &Param) specifier() string {
@@ -1194,6 +1197,7 @@ pub:
 	val_var    string
 	is_range   bool
 	pos        token.Pos
+	kv_pos     token.Pos
 	comments   []Comment
 	val_is_mut bool // `for mut val in vals {` means that modifying `val` will modify the array
 	// and the array cannot be indexed inside the loop
@@ -1376,7 +1380,8 @@ pub struct ParExpr {
 pub:
 	pos token.Pos
 pub mut:
-	expr Expr
+	expr     Expr
+	comments []Comment
 }
 
 [minify]
@@ -1604,10 +1609,10 @@ pub const (
 	// map register size -> register name
 	x86_no_number_register_list = {
 		8:  ['al', 'ah', 'bl', 'bh', 'cl', 'ch', 'dl', 'dh', 'bpl', 'sil', 'dil', 'spl']
-		16: ['ax', 'bx', 'cx', 'dx', 'bp', 'si', 'di', 'sp', /* segment registers */ 'cs', 'ss',
-			'ds', 'es', 'fs', 'gs', 'flags', 'ip', /* task registers */ 'gdtr', 'idtr', 'tr', 'ldtr',
-			// CSR register 'msw', /* FP core registers */ 'cw', 'sw', 'tw', 'fp_ip', 'fp_dp',
-			'fp_cs', 'fp_ds', 'fp_opc']
+		16: ['ax', 'bx', 'cx', 'dx', 'bp', 'si', 'di', 'sp', // segment registers
+		 		'cs', 'ss', 'ds', 'es', 'fs', 'gs', 'flags', 'ip', // task registers
+		 		'gdtr', 'idtr', 'tr', 'ldtr', // CSR register 'msw', /* FP core registers */ 'cw', 'sw', 'tw', 'fp_ip', 'fp_dp', 'fp_cs',
+		 		'fp_ds', 'fp_opc']
 		32: [
 			'eax',
 			'ebx',
@@ -1618,8 +1623,8 @@ pub const (
 			'edi',
 			'esp',
 			'eflags',
-			'eip', /* CSR register */
-			'mxcsr' /* 32-bit FP core registers 'fp_dp', 'fp_ip' (TODO: why are there duplicates?) */,
+			'eip', // CSR register
+			'mxcsr', // 32-bit FP core registers 'fp_dp', 'fp_ip' (TODO: why are there duplicates?)
 		]
 		64: ['rax', 'rbx', 'rcx', 'rdx', 'rbp', 'rsi', 'rdi', 'rsp', 'rflags', 'rip']
 	}
@@ -1662,9 +1667,11 @@ pub const (
 
 // TODO: saved priviled registers for arm
 pub const (
-	arm_no_number_register_list   = ['fp' /* aka r11 */, /* not instruction pointer: */ 'ip' /* aka r12 */,
-		'sp' /* aka r13 */, 'lr' /* aka r14 */, /* this is instruction pointer ('program counter'): */
-		'pc' /* aka r15 */,
+	arm_no_number_register_list   = ['fp', // aka r11
+	 	'ip', // not instruction pointer: aka r12
+	 	'sp', // aka r13
+	 	'lr', // aka r14
+	 	'pc', // this is instruction pointer ('program counter'): aka r15
 	] // 'cpsr' and 'apsr' are special flags registers, but cannot be referred to directly
 	arm_with_number_register_list = {
 		'r#': 16
@@ -1807,10 +1814,9 @@ pub mut:
 
 pub struct Comment {
 pub:
-	text      string
-	is_multi  bool // true only for /* comment */, that use many lines
-	is_inline bool // true for all /* comment */ comments
-	pos       token.Pos
+	text     string
+	is_multi bool // true only for /* comment */, that use many lines
+	pos      token.Pos
 }
 
 pub struct ConcatExpr {
@@ -2010,6 +2016,17 @@ pub fn (expr Expr) is_expr() bool {
 	return match expr {
 		IfExpr, LockExpr, MatchExpr, SelectExpr { expr.is_expr }
 		else { true }
+	}
+}
+
+pub fn (expr Expr) get_pure_type() Type {
+	match expr {
+		BoolLiteral { return bool_type }
+		CharLiteral { return char_type }
+		FloatLiteral { return f64_type }
+		StringLiteral { return string_type }
+		IntegerLiteral { return i64_type }
+		else { return void_type }
 	}
 }
 

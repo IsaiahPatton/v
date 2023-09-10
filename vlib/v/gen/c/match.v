@@ -70,14 +70,13 @@ fn (mut g Gen) match_expr(node ast.MatchExpr) {
 	if (node.cond in [ast.Ident, ast.IntegerLiteral, ast.StringLiteral, ast.FloatLiteral]
 		&& (node.cond !is ast.Ident || (node.cond is ast.Ident
 		&& node.cond.or_expr.kind == .absent))) || (node.cond is ast.SelectorExpr
-		&& node.cond.or_block.kind == .absent
-		&& ((node.cond as ast.SelectorExpr).expr !is ast.CallExpr
-		|| ((node.cond as ast.SelectorExpr).expr as ast.CallExpr).or_block.kind == .absent)) {
+		&& node.cond.or_block.kind == .absent && (node.cond.expr !is ast.CallExpr
+		|| (node.cond.expr as ast.CallExpr).or_block.kind == .absent)) {
 		cond_var = g.expr_string(node.cond)
 	} else {
 		line := if is_expr {
 			g.empty_line = true
-			g.go_before_stmt(0)
+			g.go_before_last_stmt()
 		} else {
 			''
 		}
@@ -90,7 +89,7 @@ fn (mut g Gen) match_expr(node ast.MatchExpr) {
 	}
 	if need_tmp_var {
 		g.empty_line = true
-		cur_line = g.go_before_stmt(0).trim_left(' \t')
+		cur_line = g.go_before_last_stmt().trim_left(' \t')
 		tmp_var = g.new_tmp_var()
 		mut func_decl := ''
 		if g.table.final_sym(node.return_type).kind == .function {

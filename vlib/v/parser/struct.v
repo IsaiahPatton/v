@@ -105,9 +105,11 @@ fn (mut p Parser) struct_decl(is_anon bool) ast.StructDecl {
 	mut is_field_pub := false
 	mut is_field_global := false
 	mut last_line := p.prev_tok.pos().line_nr + 1
+	mut pre_comments := []ast.Comment{}
 	mut end_comments := []ast.Comment{}
 	if !no_body {
 		p.check(.lcbr)
+		pre_comments = p.eat_comments()
 		mut i := 0
 		for p.tok.kind != .rcbr {
 			mut comments := []ast.Comment{}
@@ -118,7 +120,7 @@ fn (mut p Parser) struct_decl(is_anon bool) ast.StructDecl {
 				}
 			}
 			if p.tok.kind == .rcbr {
-				end_comments = comments.clone()
+				end_comments = p.eat_comments(same_line: true)
 				break
 			}
 			if p.tok.kind == .key_pub {
@@ -195,7 +197,7 @@ fn (mut p Parser) struct_decl(is_anon bool) ast.StructDecl {
 				&& (p.peek_tok.line_nr != p.tok.line_nr || p.peek_tok.kind !in [.name, .amp])
 				&& (p.peek_tok.kind != .lsbr || p.peek_token(2).kind != .rsbr))
 				|| p.peek_tok.kind == .dot) && language == .v && p.peek_tok.kind != .key_fn
-			is_on_top := ast_fields.len == 0 && !(is_field_mut || is_field_global)
+			is_on_top := ast_fields.len == 0 && !(is_field_pub || is_field_mut || is_field_global)
 			mut field_name := ''
 			mut typ := ast.Type(0)
 			mut type_pos := token.Pos{}
@@ -265,10 +267,9 @@ fn (mut p Parser) struct_decl(is_anon bool) ast.StructDecl {
 				}
 			}
 			// Comments after type (same line)
-			comments << p.eat_comments()
 			prev_attrs := p.attrs
 			p.attrs = []
-			if p.tok.kind == .lsbr {
+			if p.tok.kind == .lsbr || p.tok.kind == .at {
 				p.inside_struct_attr_decl = true
 				// attrs are stored in `p.attrs`
 				p.attributes()
@@ -279,6 +280,7 @@ fn (mut p Parser) struct_decl(is_anon bool) ast.StructDecl {
 				}
 				p.inside_struct_attr_decl = false
 			}
+			comments << p.eat_comments()
 			mut default_expr := ast.empty_expr
 			mut has_default_expr := false
 			if !is_embed {
@@ -312,7 +314,6 @@ fn (mut p Parser) struct_decl(is_anon bool) ast.StructDecl {
 					is_deprecated: is_field_deprecated
 					anon_struct_decl: p.anon_struct_decl
 				}
-				p.anon_struct_decl = ast.StructDecl{}
 			}
 			// save embeds as table fields too, it will be used in generation phase
 			fields << ast.StructField{
@@ -331,13 +332,16 @@ fn (mut p Parser) struct_decl(is_anon bool) ast.StructDecl {
 				is_global: is_field_global
 				is_volatile: is_field_volatile
 				is_deprecated: is_field_deprecated
+				anon_struct_decl: p.anon_struct_decl
 			}
+			p.anon_struct_decl = ast.StructDecl{}
 			p.attrs = prev_attrs
 			i++
 		}
 		p.top_level_statement_end()
 		last_line = p.tok.line_nr
 		p.check(.rcbr)
+		end_comments = p.eat_comments(same_line: true)
 	}
 	is_minify := attrs.contains('minify')
 	mut sym := ast.TypeSymbol{
@@ -388,6 +392,7 @@ fn (mut p Parser) struct_decl(is_anon bool) ast.StructDecl {
 		language: language
 		is_union: is_union
 		attrs: if is_anon { []ast.Attr{} } else { attrs } // anon structs can't have attributes
+		pre_comments: pre_comments
 		end_comments: end_comments
 		generic_types: generic_types
 		embeds: embeds
@@ -582,7 +587,7 @@ fn (mut p Parser) interface_decl() ast.InterfaceDecl {
 		if p.tok.kind == .name && p.tok.lit.len > 0 && p.tok.lit[0].is_capital()
 			&& (p.peek_tok.line_nr != p.tok.line_nr
 			|| p.peek_tok.kind !in [.name, .amp, .lsbr, .lpar]
-			|| (p.peek_tok.kind == .lsbr && p.peek_tok.pos - p.tok.pos == p.tok.len)) {
+			|| (p.peek_tok.kind == .lsbr && p.peek_tok.is_next_to(p.tok))) {
 			iface_pos := p.tok.pos()
 			mut iface_name := p.tok.lit
 			iface_type := p.parse_type()
@@ -637,11 +642,12 @@ fn (mut p Parser) interface_decl() ast.InterfaceDecl {
 			is_mut = true
 			mut_pos = fields.len
 		}
-		if p.peek_tok.kind in [.lt, .lsbr] && p.peek_tok.pos - p.tok.pos == p.tok.len {
+		if p.peek_tok.kind in [.lt, .lsbr] && p.peek_tok.is_next_to(p.tok) {
 			p.error_with_pos("no need to add generic type names in generic interface's method",
 				p.peek_tok.pos())
 			return ast.InterfaceDecl{}
 		}
+		mut comments := p.eat_comments()
 		if p.peek_tok.kind == .lpar {
 			method_start_pos := p.tok.pos()
 			line_nr := p.tok.line_nr
@@ -655,8 +661,8 @@ fn (mut p Parser) interface_decl() ast.InterfaceDecl {
 				p.error_with_pos('duplicate method `${name}`', method_start_pos)
 				return ast.InterfaceDecl{}
 			}
-			args2, _, is_variadic := p.fn_args() // TODO merge ast.Param and ast.Arg to avoid this
-			mut args := [
+			params_t, _, is_variadic := p.fn_params() // TODO merge ast.Param and ast.Arg to avoid this
+			mut params := [
 				ast.Param{
 					name: 'x'
 					is_mut: is_mut
@@ -664,12 +670,12 @@ fn (mut p Parser) interface_decl() ast.InterfaceDecl {
 					is_hidden: true
 				},
 			]
-			args << args2
+			params << params_t
 			mut method := ast.FnDecl{
 				name: name
 				short_name: name
 				mod: p.mod
-				params: args
+				params: params
 				file: p.file_name
 				return_type: ast.void_type
 				is_variadic: is_variadic
@@ -683,14 +689,14 @@ fn (mut p Parser) interface_decl() ast.InterfaceDecl {
 				method.return_type_pos = method.return_type_pos.extend(p.tok.pos())
 				method.pos = method.pos.extend(method.return_type_pos)
 			}
-			mcomments := p.eat_comments(same_line: true)
+			comments << p.eat_comments(same_line: true)
 			mnext_comments := p.eat_comments()
-			method.comments = mcomments
+			method.comments = comments
 			method.next_comments = mnext_comments
 			methods << method
 			tmethod := ast.Fn{
 				name: name
-				params: args
+				params: params
 				pos: method.pos
 				return_type: method.return_type
 				is_variadic: is_variadic
@@ -707,13 +713,7 @@ fn (mut p Parser) interface_decl() ast.InterfaceDecl {
 			mut type_pos := p.tok.pos()
 			field_typ := p.parse_type()
 			type_pos = type_pos.extend(p.prev_tok.pos())
-			mut comments := []ast.Comment{}
-			for p.tok.kind == .comment {
-				comments << p.comment()
-				if p.tok.kind == .rcbr {
-					break
-				}
-			}
+			comments << p.eat_comments(same_line: true)
 			fields << ast.StructField{
 				name: field_name
 				pos: field_pos

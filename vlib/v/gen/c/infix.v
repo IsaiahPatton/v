@@ -35,7 +35,16 @@ fn (mut g Gen) infix_expr(node ast.InfixExpr) {
 			g.infix_expr_arithmetic_op(node)
 		}
 		.left_shift {
+			// `a << b` can mean many things in V ...
+			// TODO: disambiguate everything in the checker; cgen should not decide all this.
+			// Instead it should be as simple, as the branch for .right_shift is.
+			// `array << val` should have its own separate operation internally.
 			g.infix_expr_left_shift_op(node)
+		}
+		.right_shift {
+			g.write('(')
+			g.gen_plain_infix_expr(node)
+			g.write(')')
 		}
 		.and, .logical_or {
 			g.infix_expr_and_or_op(node)
@@ -139,13 +148,18 @@ fn (mut g Gen) infix_expr_eq_op(node ast.InfixExpr) {
 		}
 		g.expr(node.right)
 		g.write(')')
-	} else if left.typ.idx() == right.typ.idx()
+	} else if left.unaliased.idx() == right.unaliased.idx()
 		&& left.sym.kind in [.array, .array_fixed, .alias, .map, .struct_, .sum_type, .interface_] {
 		if g.pref.translated && !g.is_builtin_mod {
 			g.gen_plain_infix_expr(node)
 			return
 		}
-		match left.sym.kind {
+		kind := if left.sym.kind == .alias && right.sym.kind != .alias {
+			left.unaliased_sym.kind
+		} else {
+			left.sym.kind
+		}
+		match kind {
 			.alias {
 				ptr_typ := g.equality_fn(left.typ)
 				if node.op == .ne {
@@ -280,7 +294,9 @@ fn (mut g Gen) infix_expr_eq_op(node ast.InfixExpr) {
 				g.expr(node.right)
 				g.write(')')
 			}
-			else {}
+			else {
+				g.gen_plain_infix_expr(node)
+			}
 		}
 	} else if left.unaliased.idx() in [ast.u32_type_idx, ast.u64_type_idx]
 		&& right.unaliased.is_signed() {
@@ -714,10 +730,9 @@ fn (mut g Gen) gen_interface_is_op(node ast.InfixExpr) {
 fn (mut g Gen) infix_expr_arithmetic_op(node ast.InfixExpr) {
 	left := g.unwrap(node.left_type)
 	right := g.unwrap(node.right_type)
-	if left.sym.kind == .struct_ && (left.sym.info as ast.Struct).generic_types.len > 0 {
-		concrete_types := (left.sym.info as ast.Struct).concrete_types
+	if left.sym.info is ast.Struct && left.sym.info.generic_types.len > 0 {
 		mut method_name := left.sym.cname + '_' + util.replace_op(node.op.str())
-		method_name = g.generic_fn_name(concrete_types, method_name)
+		method_name = g.generic_fn_name(left.sym.info.concrete_types, method_name)
 		g.write(method_name)
 		g.write('(')
 		g.expr(node.left)
@@ -740,7 +755,7 @@ fn (mut g Gen) infix_expr_arithmetic_op(node ast.InfixExpr) {
 
 		mut right_var := ''
 		if node.right is ast.Ident && node.right.or_expr.kind != .absent {
-			cur_line := g.go_before_stmt(0).trim_space()
+			cur_line := g.go_before_last_stmt().trim_space()
 			right_var = g.new_tmp_var()
 			g.write('${g.typ(right.typ)} ${right_var} = ')
 			g.op_arg(node.right, method.params[1].typ, right.typ)
@@ -846,7 +861,9 @@ fn (mut g Gen) infix_expr_left_shift_op(node ast.InfixExpr) {
 			}
 		}
 	} else {
+		g.write('(')
 		g.gen_plain_infix_expr(node)
+		g.write(')')
 	}
 }
 
@@ -893,7 +910,7 @@ fn (mut g Gen) infix_expr_and_or_op(node ast.InfixExpr) {
 		g.inside_ternary = 0
 		if g.need_tmp_var_in_if(node.right) {
 			tmp := g.new_tmp_var()
-			cur_line := g.go_before_stmt(0).trim_space()
+			cur_line := g.go_before_last_stmt().trim_space()
 			g.empty_line = true
 			g.write('bool ${tmp} = (')
 			g.expr(node.left)
@@ -913,7 +930,7 @@ fn (mut g Gen) infix_expr_and_or_op(node ast.InfixExpr) {
 		g.inside_ternary = 0
 		if g.need_tmp_var_in_match(node.right) {
 			tmp := g.new_tmp_var()
-			cur_line := g.go_before_stmt(0).trim_space()
+			cur_line := g.go_before_last_stmt().trim_space()
 			g.empty_line = true
 			g.write('bool ${tmp} = (')
 			g.expr(node.left)
@@ -930,7 +947,7 @@ fn (mut g Gen) infix_expr_and_or_op(node ast.InfixExpr) {
 	} else if g.need_tmp_var_in_array_call(node.right) {
 		// `if a == 0 || arr.any(it.is_letter()) {...}`
 		tmp := g.new_tmp_var()
-		cur_line := g.go_before_stmt(0).trim_space()
+		cur_line := g.go_before_last_stmt().trim_space()
 		g.empty_line = true
 		if g.infix_left_var_name.len > 0 {
 			g.write('bool ${tmp} = ((${g.infix_left_var_name}) ${node.op.str()} ')
@@ -950,7 +967,7 @@ fn (mut g Gen) infix_expr_and_or_op(node ast.InfixExpr) {
 			prev_inside_ternary := g.inside_ternary
 			g.inside_ternary = 0
 			tmp := g.new_tmp_var()
-			cur_line := g.go_before_stmt(0).trim_space()
+			cur_line := g.go_before_last_stmt().trim_space()
 			g.empty_line = true
 			g.write('bool ${tmp} = (')
 			g.expr(node.left)
@@ -971,7 +988,7 @@ fn (mut g Gen) infix_expr_and_or_op(node ast.InfixExpr) {
 				prev_inside_ternary := g.inside_ternary
 				g.inside_ternary = 0
 				tmp := g.new_tmp_var()
-				cur_line := g.go_before_stmt(0).trim_space()
+				cur_line := g.go_before_last_stmt().trim_space()
 				g.empty_line = true
 				g.write('bool ${tmp} = (')
 				g.expr(node.left)
@@ -997,7 +1014,7 @@ fn (mut g Gen) gen_is_none_check(node ast.InfixExpr) {
 		g.inside_opt_or_res = old_inside_opt_or_res
 		g.write('.state')
 	} else {
-		stmt_str := g.go_before_stmt(0).trim_space()
+		stmt_str := g.go_before_last_stmt().trim_space()
 		g.empty_line = true
 		left_var := g.expr_with_opt(node.left, node.left_type, node.left_type)
 		g.writeln(';')
@@ -1015,6 +1032,13 @@ fn (mut g Gen) gen_is_none_check(node ast.InfixExpr) {
 // It handles auto dereferencing of variables, as well as automatic casting
 // (see Gen.expr_with_cast for more details)
 fn (mut g Gen) gen_plain_infix_expr(node ast.InfixExpr) {
+	needs_cast := node.left_type.is_number() && node.right_type.is_number()
+		&& node.op in [.plus, .minus, .mul, .div, .mod] && !(g.pref.translated
+		|| g.file.is_translated)
+	if needs_cast {
+		typ_str := g.typ(node.promoted_type)
+		g.write('(${typ_str})(')
+	}
 	if node.left_type.is_ptr() && node.left.is_auto_deref_var() {
 		g.write('*')
 	}
@@ -1025,6 +1049,9 @@ fn (mut g Gen) gen_plain_infix_expr(node ast.InfixExpr) {
 		g.expr(node.right)
 	} else {
 		g.expr_with_cast(node.right, node.right_type, node.left_type)
+	}
+	if needs_cast {
+		g.write(')')
 	}
 }
 

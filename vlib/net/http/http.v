@@ -15,12 +15,13 @@ const (
 pub struct FetchConfig {
 pub mut:
 	url        string
-	method     Method
+	method     Method = .get
 	header     Header
 	data       string
 	params     map[string]string
 	cookies    map[string]string
-	user_agent string = 'v.http'
+	user_agent string  = 'v.http'
+	user_ptr   voidptr = unsafe { nil }
 	verbose    bool
 	//
 	validate               bool   // set this to true, if you want to stop requests, when their certificates are found to be invalid
@@ -29,6 +30,10 @@ pub mut:
 	cert_key               string // the path to a key.pem file, containing private keys for the client certificate(s)
 	in_memory_verification bool   // if true, verify, cert, and cert_key are read from memory, not from a file
 	allow_redirect         bool = true // whether to allow redirect
+	// callbacks to allow custom reporting code to run, while the request is running
+	on_redirect RequestRedirectFn = unsafe { nil }
+	on_progress RequestProgressFn = unsafe { nil }
+	on_finish   RequestFinishFn   = unsafe { nil }
 }
 
 // new_request creates a new Request given the request `method`, `url_`, and
@@ -149,7 +154,7 @@ pub fn fetch(config FetchConfig) !Response {
 		header: config.header
 		cookies: config.cookies
 		user_agent: config.user_agent
-		user_ptr: 0
+		user_ptr: config.user_ptr
 		verbose: config.verbose
 		validate: config.validate
 		verify: config.verify
@@ -157,6 +162,9 @@ pub fn fetch(config FetchConfig) !Response {
 		cert_key: config.cert_key
 		in_memory_verification: config.in_memory_verification
 		allow_redirect: config.allow_redirect
+		on_progress: config.on_progress
+		on_redirect: config.on_redirect
+		on_finish: config.on_finish
 	}
 	res := req.do()!
 	return res
@@ -179,13 +187,6 @@ pub fn url_encode_form_data(data map[string]string) string {
 	return pieces.join('&')
 }
 
-[deprecated: 'use fetch()']
-fn fetch_with_method(method Method, _config FetchConfig) !Response {
-	mut config := _config
-	config.method = method
-	return fetch(config)
-}
-
 fn build_url_from_fetch(config FetchConfig) !string {
 	mut url := urllib.parse(config.url)!
 	if config.params.len == 0 {
@@ -201,24 +202,4 @@ fn build_url_from_fetch(config FetchConfig) !string {
 	}
 	url.raw_query = query
 	return url.str()
-}
-
-[deprecated: 'unescape_url is deprecated, use urllib.query_unescape() instead']
-pub fn unescape_url(s string) string {
-	panic('http.unescape_url() was replaced with urllib.query_unescape()')
-}
-
-[deprecated: 'escape_url is deprecated, use urllib.query_escape() instead']
-pub fn escape_url(s string) string {
-	panic('http.escape_url() was replaced with urllib.query_escape()')
-}
-
-[deprecated: 'unescape is deprecated, use urllib.query_escape() instead']
-pub fn unescape(s string) string {
-	panic('http.unescape() was replaced with http.unescape_url()')
-}
-
-[deprecated: 'escape is deprecated, use urllib.query_unescape() instead']
-pub fn escape(s string) string {
-	panic('http.escape() was replaced with http.escape_url()')
 }

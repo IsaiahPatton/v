@@ -70,6 +70,19 @@ fn (mut c Checker) struct_decl(mut node ast.StructDecl) {
 					}
 				}
 			}
+			// Do not allow uninitialized `fn` fields, or force `?fn`
+			// (allow them in `C.` structs)
+			if !c.is_builtin_mod && node.language == .v {
+				sym := c.table.sym(field.typ)
+				if sym.kind == .function {
+					if !field.typ.has_flag(.option) && !field.has_default_expr
+						&& field.attrs.filter(it.name == 'required').len == 0 {
+						error_msg := 'uninitialized `fn` struct fields are not allowed, since they can result in segfaults; use `?fn` or `[required]` or initialize the field with `=` (if you absolutely want to have unsafe function pointers, use `= unsafe { nil }`)'
+						c.note(error_msg, field.pos)
+					}
+				}
+			}
+
 			if field.has_default_expr {
 				c.expected_type = field.typ
 				field.default_expr_typ = c.expr(mut field.default_expr)
@@ -80,6 +93,10 @@ fn (mut c Checker) struct_decl(mut node ast.StructDecl) {
 					}
 				}
 			}
+			// check anon struct declaration
+			if field.anon_struct_decl.fields.len > 0 {
+				c.struct_decl(mut field.anon_struct_decl)
+			}
 		}
 		c.expected_type = old_expected_type
 		util.timing_measure_cumulative('Checker.struct setting default_expr_typ')
@@ -88,8 +105,12 @@ fn (mut c Checker) struct_decl(mut node ast.StructDecl) {
 			if field.typ.has_flag(.result) {
 				c.error('struct field does not support storing Result', field.option_pos)
 			}
-			c.ensure_type_exists(field.typ, field.type_pos) or { return }
-			c.ensure_generic_type_specify_type_names(field.typ, field.type_pos) or { return }
+			if !c.ensure_type_exists(field.typ, field.type_pos) {
+				continue
+			}
+			if !c.ensure_generic_type_specify_type_names(field.typ, field.type_pos) {
+				continue
+			}
 			if field.typ.has_flag(.generic) {
 				has_generic_types = true
 			}
@@ -151,6 +172,9 @@ fn (mut c Checker) struct_decl(mut node ast.StructDecl) {
 									true)
 							}
 						}
+					} else if c.table.final_sym(field.typ).kind == .function
+						&& field.default_expr_typ.is_pointer() {
+						continue
 					} else {
 						c.error('incompatible initializer for field `${field.name}`: ${err.msg()}',
 							field.default_expr.pos())
@@ -311,6 +335,9 @@ fn (mut c Checker) struct_init(mut node ast.StructInit, is_field_zero_struct_ini
 		}
 	}
 	struct_sym := c.table.sym(node.typ)
+	mut old_inside_generic_struct_init := false
+	mut old_cur_struct_generic_types := []ast.Type{}
+	mut old_cur_struct_concrete_types := []ast.Type{}
 	if struct_sym.info is ast.Struct {
 		// check if the generic param types have been defined
 		for ct in struct_sym.info.concrete_types {
@@ -348,6 +375,20 @@ fn (mut c Checker) struct_init(mut node ast.StructInit, is_field_zero_struct_ini
 			c.error('a non generic struct `${node.typ_str}` used like a generic struct',
 				node.name_pos)
 		}
+		if struct_sym.info.generic_types.len > 0
+			&& struct_sym.info.generic_types.len == struct_sym.info.concrete_types.len {
+			old_inside_generic_struct_init = c.inside_generic_struct_init
+			old_cur_struct_generic_types = c.cur_struct_generic_types.clone()
+			old_cur_struct_concrete_types = c.cur_struct_concrete_types.clone()
+			c.inside_generic_struct_init = true
+			c.cur_struct_generic_types = struct_sym.info.generic_types.clone()
+			c.cur_struct_concrete_types = struct_sym.info.concrete_types.clone()
+			defer {
+				c.inside_generic_struct_init = old_inside_generic_struct_init
+				c.cur_struct_generic_types = old_cur_struct_generic_types
+				c.cur_struct_concrete_types = old_cur_struct_concrete_types
+			}
+		}
 	} else if struct_sym.info is ast.Alias {
 		parent_sym := c.table.sym(struct_sym.info.parent_type)
 		// e.g. ´x := MyMapAlias{}´, should be a cast to alias type ´x := MyMapAlias(map[...]...)´
@@ -366,7 +407,7 @@ fn (mut c Checker) struct_init(mut node ast.StructInit, is_field_zero_struct_ini
 		c.table.unwrap_generic_type(node.typ, c.table.cur_fn.generic_names, c.table.cur_concrete_types)
 	}
 	if !is_field_zero_struct_init {
-		c.ensure_type_exists(node.typ, node.pos) or {}
+		c.ensure_type_exists(node.typ, node.pos)
 	}
 	type_sym := c.table.sym(node.typ)
 	if !c.inside_unsafe && type_sym.kind == .sum_type {
@@ -529,6 +570,30 @@ fn (mut c Checker) struct_init(mut node ast.StructInit, is_field_zero_struct_ini
 					&& !got_type.is_ptr() {
 					c.error('allocate on the heap for use in other functions', init_field.pos)
 				}
+				if exp_type_sym.kind == .array && got_type_sym.kind == .array {
+					if init_field.expr is ast.IndexExpr
+						&& (init_field.expr as ast.IndexExpr).left is ast.Ident
+						&& ((init_field.expr as ast.IndexExpr).left.is_mut()
+						|| field_info.is_mut) && init_field.expr.index is ast.RangeExpr
+						&& !c.inside_unsafe {
+						// `a: arr[..]` auto add clone() -> `a: arr[..].clone()`
+						c.add_error_detail_with_pos('To silence this notice, use either an explicit `a[..].clone()`,
+or use an explicit `unsafe{ a[..] }`, if you do not want a copy of the slice.',
+							init_field.expr.pos())
+						c.note('an implicit clone of the slice was done here', init_field.expr.pos())
+						mut right := ast.CallExpr{
+							name: 'clone'
+							left: init_field.expr
+							left_type: got_type
+							is_method: true
+							receiver_type: got_type.ref()
+							return_type: got_type
+							scope: c.fn_scope
+						}
+						got_type = c.expr(mut right)
+						node.init_fields[i].expr = right
+					}
+				}
 				if exp_type_sym.kind == .interface_ {
 					if c.type_implements(got_type, exp_type, init_field.pos) {
 						if !c.inside_unsafe && got_type_sym.kind != .interface_
@@ -609,10 +674,10 @@ fn (mut c Checker) struct_init(mut node ast.StructInit, is_field_zero_struct_ini
 			// and the second part is all fields embedded in the structure
 			// If the return value data composition form in `c.table.struct_fields()` is modified,
 			// need to modify here accordingly.
-			fields := c.table.struct_fields(type_sym)
+			mut fields := c.table.struct_fields(type_sym)
 			mut checked_types := []ast.Type{}
 
-			for i, field in fields {
+			for i, mut field in fields {
 				if field.name in inited_fields {
 					continue
 				}
@@ -624,7 +689,7 @@ fn (mut c Checker) struct_init(mut node ast.StructInit, is_field_zero_struct_ini
 				}
 				if field.has_default_expr {
 					if i < info.fields.len && field.default_expr_typ == 0 {
-						if field.default_expr is ast.StructInit {
+						if mut field.default_expr is ast.StructInit {
 							idx := c.table.find_type_idx(field.default_expr.typ_str)
 							if idx != 0 {
 								info.fields[i].default_expr_typ = ast.new_type(idx)
@@ -633,6 +698,9 @@ fn (mut c Checker) struct_init(mut node ast.StructInit, is_field_zero_struct_ini
 							if field.typ.is_any_kind_of_pointer() {
 								info.fields[i].default_expr_typ = field.typ
 							}
+						} else if field.default_expr is ast.Ident
+							&& field.default_expr.info is ast.IdentFn {
+							c.expr(mut field.default_expr)
 						} else {
 							if const_field := c.table.global_scope.find_const('${field.default_expr}') {
 								info.fields[i].default_expr_typ = const_field.typ

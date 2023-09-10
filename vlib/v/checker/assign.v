@@ -227,7 +227,7 @@ fn (mut c Checker) assign_stmt(mut node ast.AssignStmt) {
 			}
 		} else {
 			// Make sure the variable is mutable
-			c.fail_if_immutable(left)
+			c.fail_if_immutable(mut left)
 
 			if !is_blank_ident && !left_type.has_flag(.option) && right_type.has_flag(.option) {
 				c.error('cannot assign an Option value to a non-option variable', right.pos())
@@ -264,7 +264,17 @@ fn (mut c Checker) assign_stmt(mut node ast.AssignStmt) {
 		node.left_types << left_type
 		match mut left {
 			ast.Ident {
-				if left.kind == .blank_ident {
+				if (is_decl || left.kind == .blank_ident) && left_type.is_ptr()
+					&& mut right is ast.PrefixExpr && right.right_type == ast.int_literal_type_idx {
+					if mut right.right is ast.Ident && right.right.obj is ast.ConstField {
+						const_name := right.right.name.all_after_last('.')
+						const_val := (right.right.obj as ast.ConstField).expr
+						c.add_error_detail('Specify the type for the constant value. Example:')
+						c.add_error_detail('         `const ${const_name} = int(${const_val})`')
+						c.error('cannot assign a pointer to a constant with an integer literal value',
+							right.right.pos)
+					}
+				} else if left.kind == .blank_ident {
 					left_type = right_type
 					node.left_types[i] = right_type
 					if node.op !in [.assign, .decl_assign] {
@@ -364,6 +374,10 @@ fn (mut c Checker) assign_stmt(mut node ast.AssignStmt) {
 								c.warn('duplicate of a const name `${full_name}`', left.pos)
 							}
 						}
+						if left.name == left.mod && left.name != 'main' {
+							c.add_error_detail('Module name duplicates will become errors after 2023/10/31.')
+							c.note('duplicate of a module name `${left.name}`', left.pos)
+						}
 						// Check if variable name is already registered as imported module symbol
 						if c.check_import_sym_conflict(left.name) {
 							c.error('duplicate of an import symbol `${left.name}`', left.pos)
@@ -458,20 +472,65 @@ fn (mut c Checker) assign_stmt(mut node ast.AssignStmt) {
 			// no point to show the notice, if the old error was already shown:
 			if !old_assign_error_condition {
 				mut_str := if node.op == .decl_assign { 'mut ' } else { '' }
-				c.note('use `${mut_str}array2 ${node.op.str()} array1.clone()` instead of `${mut_str}array2 ${node.op.str()} array1` (or use `unsafe`)',
+				c.warn('use `${mut_str}array2 ${node.op.str()} array1.clone()` instead of `${mut_str}array2 ${node.op.str()} array1` (or use `unsafe`)',
 					node.pos)
 			}
 		}
-		if left_sym.kind == .array && right_sym.kind == .array && node.op == .assign {
-			// `mut arr := [u8(1),2,3]`
-			// `arr = [byte(4),5,6]`
-			left_info := left_sym.info as ast.Array
-			left_elem_type := c.table.unaliased_type(left_info.elem_type)
+		if left_sym.kind == .array && right_sym.kind == .array {
 			right_info := right_sym.info as ast.Array
 			right_elem_type := c.table.unaliased_type(right_info.elem_type)
-			if left_type_unwrapped.nr_muls() == right_type_unwrapped.nr_muls()
-				&& left_info.nr_dims == right_info.nr_dims && left_elem_type == right_elem_type {
-				continue
+			if node.op in [.decl_assign, .assign] {
+				// Do not allow `mut arr := [&immutable_object]`
+				if mut left is ast.Ident && right_elem_type.is_ptr() {
+					if left.is_mut() || (left.obj is ast.Var && left.obj.is_mut) {
+						if mut right is ast.ArrayInit && right.exprs.len > 0 {
+							elem_expr := right.exprs[0]
+							if elem_expr is ast.PrefixExpr && elem_expr.op == .amp {
+								r := elem_expr.right
+								if r is ast.Ident {
+									obj := r.obj
+									if obj is ast.Var && !obj.is_mut {
+										c.warn('cannot add a referenece to an immutable object to a mutable array',
+											elem_expr.pos)
+									}
+								}
+							}
+						}
+					}
+				} else if mut left is ast.Ident && left.kind != .blank_ident
+					&& right is ast.IndexExpr {
+					if (right as ast.IndexExpr).left is ast.Ident
+						&& (right as ast.IndexExpr).index is ast.RangeExpr
+						&& ((right as ast.IndexExpr).left.is_mut() || left.is_mut())
+						&& !c.inside_unsafe {
+						// `mut a := arr[..]` auto add clone() -> `mut a := arr[..].clone()`
+						c.add_error_detail_with_pos('To silence this notice, use either an explicit `a[..].clone()`,
+or use an explicit `unsafe{ a[..] }`, if you do not want a copy of the slice.',
+							right.pos())
+						c.note('an implicit clone of the slice was done here', right.pos())
+						right = ast.CallExpr{
+							name: 'clone'
+							left: right
+							left_type: left_type
+							is_method: true
+							receiver_type: left_type
+							return_type: left_type
+							scope: c.fn_scope
+						}
+						right_type = c.expr(mut right)
+						node.right[i] = right
+					}
+				}
+			}
+			if node.op == .assign {
+				// `mut arr := [u8(1),2,3]`
+				// `arr = [byte(4),5,6]`
+				left_info := left_sym.info as ast.Array
+				left_elem_type := c.table.unaliased_type(left_info.elem_type)
+				if left_type_unwrapped.nr_muls() == right_type_unwrapped.nr_muls()
+					&& left_info.nr_dims == right_info.nr_dims && left_elem_type == right_elem_type {
+					continue
+				}
 			}
 		}
 		if left_sym.kind == .array_fixed && !c.inside_unsafe && node.op in [.assign, .decl_assign]
@@ -664,11 +723,28 @@ fn (mut c Checker) assign_stmt(mut node ast.AssignStmt) {
 				}
 			}
 		}
-		if !is_blank_ident && !left.is_auto_deref_var() && !right.is_auto_deref_var()
-			&& right_sym.kind != .placeholder && left_sym.kind != .interface_
+		if !is_blank_ident && right_sym.kind != .placeholder && left_sym.kind != .interface_
 			&& !right_type.has_flag(.generic) && !left_type.has_flag(.generic) {
 			// Dual sides check (compatibility check)
 			c.check_expected(right_type_unwrapped, left_type_unwrapped) or {
+				// allow literal values to auto deref var (e.g.`for mut v in values { v = 1.0 }`)
+				if left.is_auto_deref_var() || right.is_auto_deref_var() {
+					left_deref := if left.is_auto_deref_var() {
+						left_type.deref()
+					} else {
+						left_type
+					}
+					right_deref := if right.is_pure_literal() {
+						right.get_pure_type()
+					} else if right.is_auto_deref_var() {
+						right_type.deref()
+					} else {
+						right_type
+					}
+					if c.check_types(left_deref, right_deref) {
+						continue
+					}
+				}
 				// allow for ptr += 2
 				if left_type_unwrapped.is_ptr() && right_type_unwrapped.is_int()
 					&& node.op in [.plus_assign, .minus_assign] {

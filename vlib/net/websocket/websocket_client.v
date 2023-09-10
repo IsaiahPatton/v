@@ -4,6 +4,7 @@
 module websocket
 
 import net
+import net.conv
 import net.http
 import net.ssl
 import net.urllib
@@ -150,9 +151,7 @@ pub fn (mut ws Client) listen() ! {
 		ws.debug_log('got message: ${msg.opcode}')
 		match msg.opcode {
 			.text_frame {
-				log_msg = 'read: text'
-				ws.debug_log(log_msg)
-				unsafe { log_msg.free() }
+				ws.debug_log('read: text')
 				ws.send_message_event(msg)
 				unsafe { msg.free() }
 			}
@@ -184,9 +183,7 @@ pub fn (mut ws Client) listen() ! {
 				}
 			}
 			.close {
-				log_msg = 'read: close'
-				ws.debug_log(log_msg)
-				unsafe { log_msg.free() }
+				ws.debug_log('read: close')
 				defer {
 					ws.manage_clean_close()
 				}
@@ -265,7 +262,12 @@ pub fn (mut ws Client) write_ptr(bytes &u8, payload_len int, code OPCode) !int {
 		if payload_len <= 125 {
 			header[1] = u8(payload_len)
 		} else if payload_len > 125 && payload_len <= 0xffff {
-			len16 := C.htons(payload_len)
+			len16 := $if tinyc {
+				conv.hton16(u16(payload_len))
+			} $else {
+				C.htons(payload_len)
+			}
+
 			header[1] = 126
 			unsafe { C.memcpy(&header[2], &len16, 2) }
 		} else if payload_len > 0xffff && payload_len <= 0x7fffffff {
@@ -281,7 +283,11 @@ pub fn (mut ws Client) write_ptr(bytes &u8, payload_len int, code OPCode) !int {
 			header[4] = masking_key[2]
 			header[5] = masking_key[3]
 		} else if payload_len > 125 && payload_len <= 0xffff {
-			len16 := C.htons(payload_len)
+			len16 := $if tinyc {
+				conv.hton16(u16(payload_len))
+			} $else {
+				C.htons(payload_len)
+			}
 			header[1] = (126 | 0x80)
 			unsafe { C.memcpy(&header[2], &len16, 2) }
 			header[4] = masking_key[0]
@@ -350,7 +356,11 @@ pub fn (mut ws Client) close(code int, message string) ! {
 	ws.set_state(.closing)
 	// mut code32 := 0
 	if code > 0 {
-		code_ := C.htons(code)
+		code_ := $if tinyc {
+			conv.hton16(u16(code))
+		} $else {
+			C.htons(code)
+		}
 		message_len := message.len + 2
 		mut close_frame := []u8{len: message_len}
 		close_frame[0] = u8(code_ & 0xFF)

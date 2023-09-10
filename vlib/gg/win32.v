@@ -130,9 +130,18 @@ fn C.win32_draw_line(hdc C.HDC, a int, b int, c int, d int, rgb C.COLORREF, styl
 fn C.draw_rect_filled_alpha(hdc C.HDC, x int, y int, w int, h int, rgb C.COLORREF, alpha int)
 fn C.win32_draw_triangle(hdc C.HDC, x int, y int, x2 int, y2 int, x3 int, y3 int, r int, g int, b int)
 fn C.FillRect(hdc C.HDC, rect &C.tagRECT, hbr C.HBRUSH)
+
+// 		C.RoundRect(hdc, rect.left, rect.top, rect.right, rect.bottom, f32_to_i32(radius * 2), f32_to_i32(radius * 2));
+fn C.RoundRect(hdc C.HDC, x int, y int, right int, bottom int, w int, h int)
+
 fn C.FrameRect(hdc C.HDC, rect &C.tagRECT, hbr C.HBRUSH)
 fn C.CreateBitmapFromPixels(hdc C.HDC, width int, height int, pixels voidptr) C.HBITMAP
 fn C.PaintImage(hdc C.HDC, hbm C.HBITMAP, x int, y int, w int, h int, px int, py int, pw int, ph int)
+
+fn win_paint_image(hdc C.HDC, hbm C.HBITMAP, x int, y int, w int, h int, px int, py int, pw int, ph int) {
+	C.PaintImage(hdc, hbm, x, y, w, h, px, py, pw, ph)
+}
+
 
 // text c fns
 fn C.DrawText(hdc C.HDC, lpchtext &u16, cch int, rect &C.tagRECT, format u32)
@@ -145,14 +154,120 @@ fn C.my_create_font(size int) C.HFONT
 struct C.PAINTSTRUCT {
 }
 
+struct DrawInstruction {
+	typ string
+}
+
+fn (this DrawInstruction) matches(o DrawInstruction) bool {
+	return this.typ == o.typ
+}
+
+pub fn do_draw(ctx &Context) int {
+	a := ctx.win32.last
+	b := ctx.win32.current
+
+	mut dat := C.GetWindowLongPtr(C.get_hwnd(), gg.gwlp_userdata)
+	mut mydat := unsafe { &Win32Userdata(voidptr(dat)) }
+
+	mut c := []DrawInstruction{}
+	
+	for val in b {
+		mut doo := true
+		for vall in a {
+			if vall.matches(val) {
+				doo = false
+			}
+		}
+		if doo {
+			c << val
+		}
+	}
+	
+	
+	for y in a {
+		mut hass := false
+		for z in b {
+			if (y.typ == z.typ) {
+				hass = true
+			}
+		}
+		if !hass {
+			dump(y)
+		}
+	}
+	
+	mut a_s := ''
+	mut b_s := ''
+	
+	for aa in a {
+		dh := does_have(aa.typ, b)
+		if !dh {
+			a_s += ' | ' + aa.typ
+		}
+	}
+	for bb in b {
+		dh := does_have(bb.typ, a)
+		if bb.typ.contains('txt ') && bb.typ.contains('println') {
+			dump('${bb.typ} ${dh}')
+		}
+		if !dh {
+			b_s += ' | ' + bb.typ
+		}
+	}
+	//dump('${a.len} | ${b.len}')
+	//if a.len != b.len {
+	if a_s.len > 0 || b_s.len > 0 {
+		dump(a_s)
+		dump(b_s)
+	}
+	//}
+	
+	if a.len != b.len {
+		/*dump(a == b)
+		dump(a.len)
+		dump(b.len)
+		dump(c)*/
+		return 1
+	}
+	
+	if a.len == 0 {
+		return 1
+	}
+	
+	// dump(c.len)
+
+	return c.len
+}
+
+fn does_have(typ string, arr []DrawInstruction) bool {
+	for s in arr {
+		if s.typ == typ {
+			return true
+		}
+	}
+	return false
+}
+
+struct FillRectInstruction {
+	DrawInstruction
+}
+
 fn win32_scissor_rect(hdc C.HDC, x int, y int, w int, h int) {
 	C.my_scissor_rect(hdc, x, y, w, h)
 }
+
+fn C.get_hwnd() C.HWND 
 
 fn win32_draw_text(hdc C.HDC, text string, x int, y int, cfg gx.TextCfg) {
 	rect := &C.tagRECT{
 		left: x
 		top: y
+	}
+
+	mut dat := C.GetWindowLongPtr(C.get_hwnd(), gg.gwlp_userdata)
+	mut mydat := unsafe { &Win32Userdata(voidptr(dat)) }
+	mydat.current << DrawInstruction{
+		typ: 'txt ${text} ${x} ${y}'
 	}
 
 	C.fix_text_background(hdc)
@@ -184,7 +299,7 @@ fn win32_create_window(x int, y int, w int, h int, title string) &C.HWND {
 	cw := (C.COLOR_WINDOW + 1)
 	wndclass := Win32WndClass{
 		cb_size: sizeof(Win32WndClass)
-		lpfn_wnd_proc: my_wnd_proc
+		lpfn_wnd_proc: voidptr(my_wnd_proc)
 		lpsz_class_name: title.to_wide()
 		lpsz_menu_name: 0
 		h_icon_sm: 0
@@ -229,6 +344,8 @@ mut:
 	fps    int
 	test   int
 	mouse_moving bool
+	last []DrawInstruction
+	current []DrawInstruction
 }
 
 fn win32_set_userdata(hwnd C.HWND, ctx &Context) &Win32Userdata {
@@ -277,6 +394,10 @@ fn create_wimg(hdc C.HDC, w int, h int, data voidptr) &WImg {
 	}
 }
 
+fn update_window(hwnd C.HWND) {
+	C.InvalidateRect(hwnd, C.NULL, C.TRUE)
+}
+
 // Win32 Window Events
 fn my_wnd_proc(hwnd C.HWND, message u32, wParam C.WPARAM, lParam C.LPARAM) C.LRESULT {
 	mut dat := C.GetWindowLongPtr(hwnd, gg.gwlp_userdata)
@@ -286,13 +407,19 @@ fn my_wnd_proc(hwnd C.HWND, message u32, wParam C.WPARAM, lParam C.LPARAM) C.LRE
 	}
 
 	if message == gg.wm_size {
+		dump('SIZE')
 		return C.WndProc_A(hwnd, message, wParam, lParam)
+	}
+	
+	if message != gg.wm_paint {
+		// C.InvalidateRect(hwnd, C.NULL, C.TRUE)
+		//rect := C.tagRECT{0, 0, 100, 100}
+		//C.InvalidateRect(hwnd, &rect, C.TRUE)
 	}
 
 	if message == gg.wm_mousemove {
 		mx := C.get_mouse_x(lParam)
 		my := C.get_mouse_y(lParam)
-
 		mut ev := &Event{
 			typ: .mouse_move
 			mouse_x: mx
@@ -346,8 +473,9 @@ fn my_wnd_proc(hwnd C.HWND, message u32, wParam C.WPARAM, lParam C.LPARAM) C.LRE
 
 	if message == gg.wm_create {
 		C.WndProc_create(hwnd, message, wParam, lParam)
-		target_fps := 60
+		target_fps := 40
 		C.SetTimer(hwnd, 1, (1000 / target_fps), C.NULL)
+		//C.SetTimer(hwnd, 3, 50, C.NULL)
 		C.SetTimer(hwnd, 2, 1000, C.NULL)
 		return C.LRESULT(0)
 	}
@@ -355,13 +483,34 @@ fn my_wnd_proc(hwnd C.HWND, message u32, wParam C.WPARAM, lParam C.LPARAM) C.LRE
 	if message == gg.wm_timer {
 		timerid := u32(wParam)
 
-		if timerid == 1 {
+		if timerid == 3 {
 			C.InvalidateRect(hwnd, C.NULL, C.TRUE)
+		}
+
+		if timerid == 1 {
+		
+			mut mydat := unsafe { &Win32Userdata(voidptr(dat)) }
+			
+			// val := do_draw(mydat.ctx)
+
+			//if val > 0 {
+				C.InvalidateRect(hwnd, C.NULL, C.TRUE)
+			//} else {
+			//	mydat.current.clear()
+			//	gg_frame_fn(mut mydat.ctx)
+			//}
+			//mydat.last = mydat.current
+				//mydat.current.clear()
+			//} else {
+				//mydat.current.clear()
+				//gg_frame_fn(mut mydat.ctx)
+			//}
 		}
 		if timerid == 2 {
 			if dat != unsafe { nil } {
 				mut mydat := unsafe { &Win32Userdata(voidptr(dat)) }
 				mydat.fps = mydat.frames
+				dump(mydat.fps)
 				mydat.frames = 0
 			}
 		}
@@ -383,12 +532,14 @@ fn my_wnd_proc(hwnd C.HWND, message u32, wParam C.WPARAM, lParam C.LPARAM) C.LRE
 			mut mydat := unsafe { &Win32Userdata(voidptr(dat)) }
 			gg_event_fn_(ev, mydat.ctx)
 		}
+		
 		return C.LRESULT(0)
 	}
 
 	if message == gg.wm_char {
 		pkey := u32(wParam)
 		if !is_key_char(pkey) {
+			dump(pkey)
 			return C.LRESULT(0)
 		}
 
@@ -415,21 +566,26 @@ fn my_wnd_proc(hwnd C.HWND, message u32, wParam C.WPARAM, lParam C.LPARAM) C.LRE
 	}
 
 	if message == gg.wm_paint {
+		//dump('PAINT')
 		C.WndProc_pa(hwnd, message, wParam, lParam)
 
 		hfont := C.my_create_font(16)
 		if dat != unsafe { nil } {
 			mut mydat := unsafe { &Win32Userdata(voidptr(dat)) }
+			mydat.last = mydat.current
+			mydat.current.clear()
 			if mydat.test == 0 {
 				mydat.hdc = C.get_bufferdc() // hbufferdc
 				mydat.test = 1
 			}
 			C.SelectObject(mydat.hdc, C.HGDIOBJ(hfont))
 			gg_frame_fn(mut mydat.ctx)
+			//mydat.last = mydat.current
 			mydat.frames += 1
 		}
 		C.DeleteObject(C.HGDIOBJ(hfont))
 		C.WndProc_pb(hwnd, message, wParam, lParam)
+
 		return C.LRESULT(1)
 	}
 
@@ -438,12 +594,31 @@ fn my_wnd_proc(hwnd C.HWND, message u32, wParam C.WPARAM, lParam C.LPARAM) C.LRE
 
 // TODO: https://boostrobotics.eu/windows-key-codes/
 fn get_key_code(c u32) KeyCode {
+	//dump(c)
 	unsafe {
 		if c == 13 {
 			return .enter
 		}
 		if c == 8 {
 			return .backspace
+		}
+		if c == 9 {
+			return .tab
+		}
+		if c == 37 {
+			return .left
+		}
+		if c == 38 {
+			return .up
+		}
+		if c == 39 {
+			return .right
+		}
+		if c == 38 {
+			return .down
+		}
+		if c == 164 {
+			return .left_alt 
 		}
 		kc := KeyCode(c)
 		return kc
@@ -453,12 +628,19 @@ fn get_key_code(c u32) KeyCode {
 // is_key_char returns true if the given u8 is a valid key character.
 [inline]
 pub fn is_key_char(c u32) bool {
-	return (c >= `a` && c <= `z`) || (c >= `A` && c <= `Z`) || c == 32 // 32 = space
+	return (c >= `a` && c <= `z`) || (c >= `A` && c <= `Z`) || c == 32 || (c >= 48 && c <= 57) || c == 46 // 32 = space, 48-57 = 0-9
 }
 
 // Draw rect filled
 fn win32_draw_rect_filled(hdc C.HDC, x f32, y f32, w f32, h f32, c gx.Color) {
 	color := to_colorref(c)
+	
+	mut dat := C.GetWindowLongPtr(C.get_hwnd(), gg.gwlp_userdata)
+	mut mydat := unsafe { &Win32Userdata(voidptr(dat)) }
+	mydat.current << DrawInstruction{
+		typ: 'filled${x},${y},${w},${h},${c}'
+	}
+
 	if c.a == 255 {
 		hbrush := C.CreateSolidBrush(color)
 		rec := C.tagRECT{x, y, x + w, y + h}
@@ -478,18 +660,61 @@ fn win32_draw_rect_filled_alpha(hdc C.HDC, x f32, y f32, w f32, h f32, c gx.Colo
 fn win32_draw_rect_empty(hdc C.HDC, x f32, y f32, w f32, h f32, c gx.Color) {
 	hbrush := C.CreateSolidBrush(C.RGB(c.r, c.g, c.b))
 	rec := C.tagRECT{x, y, x + w, y + h}
+
+	mut dat := C.GetWindowLongPtr(C.get_hwnd(), gg.gwlp_userdata)
+	mut mydat := unsafe { &Win32Userdata(voidptr(dat)) }
+	mydat.current << DrawInstruction{
+		typ: 'remp${x},${y},${w},${h},${c}'
+	}
+	
 	C.FrameRect(hdc, &rec, hbrush)
 	C.DeleteObject(C.HGDIOBJ(hbrush))
 }
 
+fn win32_draw_rrect_filled(hdc C.HDC, x f32, y f32, w f32, h f32, radius f32, c gx.Color) {
+	color := to_colorref(c)
+	
+	mut dat := C.GetWindowLongPtr(C.get_hwnd(), gg.gwlp_userdata)
+	mut mydat := unsafe { &Win32Userdata(voidptr(dat)) }
+	mydat.current << DrawInstruction{
+		typ: 'filled${x},${y},${w},${h},${c}'
+	}
+
+	if c.a == 255 {
+		hbrush := C.CreateSolidBrush(color)
+		rec := C.tagRECT{x, y, x + w, y + h}
+
+		C.RoundRect(hdc, rec.left, rec.top, rec.right, rec.bottom, (radius * 2), (radius * 2))
+
+		
+		C.DeleteObject(C.HGDIOBJ(hbrush))
+		return
+	}
+	C.draw_rect_filled_alpha(hdc, x, y, w, h, color, c.a)
+}
+
 // Draw rounded rect empty
 fn win32_draw_rounded_rect_empty(hdc C.HDC, x f32, y f32, w f32, h f32, radius f32, c gx.Color) {
-	win32_draw_rect_empty(hdc, x, y, w, h, c)
+	//win32_draw_rect_empty(hdc, x, y, w, h, c)
+	
+	color := to_colorref(c)
+	hbrush := C.CreateSolidBrush(color)
+	rec := C.tagRECT{x, y, x + w, y + h}
+	C.EmptyRoundRect(hdc, rec, hbrush, radius)
+	C.DeleteObject(C.HGDIOBJ(hbrush))
 }
+
+// void DrawCell(HDC& hdc, const RECT& rcTarget,const HBRUSH& hbrUpper, const HBRUSH& hbrLower) {
+fn C.DrawCell(hdc C.HDC, rec C.tagRECT, b C.HBRUSH, rad int)
+fn C.EmptyRoundRect(hdc C.HDC, rec C.tagRECT, b C.HBRUSH, rad int)
 
 // Draw rounded rect filled
 fn win32_draw_rounded_rect_filled(hdc C.HDC, x f32, y f32, w f32, h f32, radius f32, c gx.Color) {
-	win32_draw_rect_filled(hdc, x, y, w, h, c)
+	color := to_colorref(c)
+	hbrush := C.CreateSolidBrush(color)
+	rec := C.tagRECT{x, y, x + w, y + h}
+	C.DrawCell(hdc, rec, hbrush, radius)
+	C.DeleteObject(C.HGDIOBJ(hbrush))
 }
 
 // Draw pixel
@@ -511,9 +736,17 @@ fn win32_draw_pixels(hdc C.HDC, points []f32, c gx.Color) {
 }
 
 fn gg_event_fn_(ce voidptr, user_data voidptr) {
+
 	// e := unsafe { &sapp.Event(ce) }
 	mut e := unsafe { &Event(ce) }
 	mut ctx := unsafe { &Context(user_data) }
+	
+	mut dat := C.GetWindowLongPtr(C.get_hwnd(), gg.gwlp_userdata)
+	mut mydat := unsafe { &Win32Userdata(voidptr(dat)) }
+	/*mydat.current << DrawInstruction{
+		typ: '${e.typ}'
+	}*/
+	
 	if ctx.ui_mode {
 		ctx.refresh_ui()
 	}

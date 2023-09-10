@@ -39,6 +39,9 @@ If V is already installed on a machine, it can be upgraded to its latest version
 by using the V's built-in self-updater.
 To do so, run the command `v up`.
 
+## Packaging V for distribution
+See the [notes on how to prepare a package for V](packaging_v_for_distributions.md) .
+
 ## Getting started
 
 You can let V automatically set up the bare-bones structure of a project for you
@@ -1228,7 +1231,7 @@ The behaviour depends on the parent's capacity and is predictable:
 
 ```v
 mut a := []int{len: 5, cap: 6, init: 2}
-mut b := a[1..4]
+mut b := unsafe { a[1..4] }
 a << 3
 // no reallocation - fits in `cap`
 b[2] = 13 // `a[3]` is modified
@@ -3147,6 +3150,17 @@ pub fn say_hi() {
 	println('hello from mymodule!')
 }
 ```
+All items inside a module can be used between the files of a module regardless of whether or
+not they are prefaced with the `pub` keyword.
+```v failcompile
+// myfile2.v
+module mymodule
+
+pub fn say_hi_and_bye() {
+	say_hi() // from myfile.v
+	println('goodbye from mymodule')
+}
+```
 
 You can now use `mymodule` in your code:
 
@@ -3155,6 +3169,7 @@ import mymodule
 
 fn main() {
 	mymodule.say_hi()
+	mymodule.say_hi_and_bye()
 }
 ```
 
@@ -3450,7 +3465,9 @@ fn fn1(s Foo) {
 
 #### Casting an interface
 
-We can test the underlying type of an interface using dynamic cast operators:
+We can test the underlying type of an interface using dynamic cast operators.
+> **Note**
+> Dynamic cast converts variable `s` into a pointer inside the `if` statemnts in this example:
 
 ```v oksyntax
 // interface-example.3 (continued from interface-example.1)
@@ -4042,6 +4059,13 @@ fn main() {
 }
 ```
 
+> **Note**
+> Threads rely on the machine's CPU (number of cores/threads).
+> Be aware that OS threads spawned with `spawn`
+> have limitations in regard to concurrency, 
+> including resource overhead and scalability issues, 
+> and might affect performance in cases of high thread count.
+
 There's also a `go` keyword. Right now `go foo()` will be automatically renamed via vfmt
 to `spawn foo()`, and there will be a way to launch a coroutine with `go` (a lightweight
 thread managed by the runtime).
@@ -4551,9 +4575,9 @@ If a test function has an error return type, any propagated errors will fail the
 ```v
 import strconv
 
-fn test_atoi() ? {
-	assert strconv.atoi('1')? == 1
-	assert strconv.atoi('one')? == 1 // test will fail
+fn test_atoi() ! {
+	assert strconv.atoi('1')! == 1
+	assert strconv.atoi('one')! == 1 // test will fail
 }
 ```
 
@@ -5583,13 +5607,13 @@ is compiled with `v -g` or `v -cg`.
 If you're using a custom ifdef, then you do need `$if option ? {}` and compile with`v -d option`.
 Full list of builtin options:
 
-| OS                             | Compilers        | Platforms        | Other                                         |
-|--------------------------------|------------------|------------------|-----------------------------------------------|
-| `windows`, `linux`, `macos`    | `gcc`, `tinyc`   | `amd64`, `arm64` | `debug`, `prod`, `test`                       |
-| `mac`, `darwin`, `ios`,        | `clang`, `mingw` | `x64`, `x32`     | `js`, `glibc`, `prealloc`                     |
-| `android`, `mach`, `dragonfly` | `msvc`           | `little_endian`  | `no_bounds_checking`, `freestanding`          |
-| `gnu`, `hpux`, `haiku`, `qnx`  | `cplusplus`      | `big_endian`     | `no_segfault_handler`, `no_backtrace`         |
-| `solaris`, `termux`            |                  |                  | `no_main`                                     |
+| OS                             | Compilers        | Platforms                     | Other                                         |
+|--------------------------------|------------------|-------------------------------|-----------------------------------------------|
+| `windows`, `linux`, `macos`    | `gcc`, `tinyc`   | `amd64`, `arm64`, `aarch64`   | `debug`, `prod`, `test`                       |
+| `mac`, `darwin`, `ios`,        | `clang`, `mingw` | `i386`, `arm32`               | `js`, `glibc`, `prealloc`                     |
+| `android`, `mach`, `dragonfly` | `msvc`           | `x64`, `x32`                  | `no_bounds_checking`, `freestanding`          |
+| `gnu`, `hpux`, `haiku`, `qnx`  | `cplusplus`      | `little_endian`, `big_endian` | `no_segfault_handler`, `no_backtrace`         |
+| `solaris`, `termux`            |                  |                               | `no_main`, 'fast_math'                        |
 
 #### `$embed_file`
 
@@ -6664,7 +6688,7 @@ println('c: ${c}') // 120
 ```
 
 For more examples, see
-[github.com/vlang/v/tree/master/vlib/v/tests/assembly/asm_test.amd64.v](https://github.com/vlang/v/tree/master/vlib/v/tests/assembly/asm_test.amd64.v)
+[vlib/v/slow_tests/assembly/asm_test.amd64.v](https://github.com/vlang/v/tree/master/vlib/v/slow_tests/assembly/asm_test.amd64.v)
 
 ### Hot code reloading
 
@@ -6738,7 +6762,7 @@ fn sh(cmd string) {
 rmdir_all('build') or {}
 
 // Create build/, never fails as build/ does not exist
-mkdir('build')?
+mkdir('build')!
 
 // Move *.v files to build/
 result := execute('mv *.v build/')
@@ -6749,7 +6773,7 @@ if result.exit_code != 0 {
 sh('ls')
 
 // Similar to:
-// files := ls('.')?
+// files := ls('.')!
 // mut count := 0
 // if files.len > 0 {
 //     for file in files {

@@ -3,9 +3,10 @@ module arrays
 import strings
 
 // Common arrays functions:
-// - min / max - return the value of the minumum / maximum
-// - idx_min / idx_max - return the index of the first minumum / maximum
+// - min / max - return the value of the minimum / maximum
+// - idx_min / idx_max - return the index of the first minimum / maximum
 // - merge - combine two sorted arrays and maintain sorted order
+// - append - combine two arrays, by appending the second array to the first
 // - chunk - chunk array to arrays with n elements
 // - window - get snapshots of the window of the given size sliding along array with the given step, where each snapshot is an array
 // - group - merge two arrays by interleaving e.g. arrays.group([1,3,5], [2,4,6]) => [[1,2],[3,4],[5,6]]
@@ -109,6 +110,17 @@ pub fn merge[T](a []T, b []T) []T {
 	return m
 }
 
+// append the second array `b` to the first array `a`, and return the result.
+// Note, that unlike arrays.concat, arrays.append is less flexible, but more efficient,
+// since it does not require you to use ...a for the second parameter.
+// Example: arrays.append([1, 3, 5, 7], [2, 4, 6, 8]) // => [1, 3, 5, 7, 2, 4, 6, 8]
+pub fn append[T](a []T, b []T) []T {
+	mut m := []T{cap: a.len + b.len}
+	m << a
+	m << b
+	return m
+}
+
 // group n arrays into a single array of arrays with n elements
 //
 // This function is analogous to the "zip" function of other languages.
@@ -116,12 +128,12 @@ pub fn merge[T](a []T, b []T) []T {
 //
 // NOTE: An error will be generated if the type annotation is omitted.
 // Example: arrays.group[int]([1, 2, 3], [4, 5, 6]) // => [[1, 4], [2, 5], [3, 6]]
-pub fn group[T](arrays ...[]T) [][]T {
-	mut length := if arrays.len > 0 { arrays[0].len } else { 0 }
+pub fn group[T](arrs ...[]T) [][]T {
+	mut length := if arrs.len > 0 { arrs[0].len } else { 0 }
 	// calculate length of output by finding shortest input array
-	for ndx in 1 .. arrays.len {
-		if arrays[ndx].len < length {
-			length = arrays[ndx].len
+	for ndx in 1 .. arrs.len {
+		if arrs[ndx].len < length {
+			length = arrs[ndx].len
 		}
 	}
 
@@ -129,10 +141,10 @@ pub fn group[T](arrays ...[]T) [][]T {
 		mut arr := [][]T{cap: length}
 		// append all combined arrays into the resultant array
 		for ndx in 0 .. length {
-			mut grouped := []T{cap: arrays.len}
+			mut grouped := []T{cap: arrs.len}
 			// combine each list item for the ndx position into one array
-			for arr_ndx in 0 .. arrays.len {
-				grouped << arrays[arr_ndx][ndx]
+			for arr_ndx in 0 .. arrs.len {
+				grouped << arrs[arr_ndx][ndx]
 			}
 			arr << grouped
 		}
@@ -312,7 +324,7 @@ pub fn fold_indexed[T, R](array []T, init R, fold_op fn (idx int, acc R, elem T)
 }
 
 // flatten flattens n + 1 dimensional array into n dimensional array
-// Example: arrays.flatten<int>([[1, 2, 3], [4, 5]]) // => [1, 2, 3, 4, 5]
+// Example: arrays.flatten[int]([[1, 2, 3], [4, 5]]) // => [1, 2, 3, 4, 5]
 pub fn flatten[T](array [][]T) []T {
 	// calculate required capacity
 	mut required_size := 0
@@ -667,9 +679,9 @@ pub fn carray_to_varray[T](c_array_data voidptr, items int) []T {
 	return v_array
 }
 
-// find_first returns the first element that matches the given predicate
-// returns `none`, if there is no match found
-// Example: arrays.find_first([1, 2, 3, 4, 5], fn (arr int) bool { arr == 3}) // => 3
+// find_first returns the first element that matches the given predicate.
+// Returns `none` if no match is found.
+// Example: arrays.find_first([1, 2, 3, 4, 5], fn (i int) bool { return i == 3 })? // => 3
 pub fn find_first[T](array []T, predicate fn (elem T) bool) ?T {
 	if array.len == 0 {
 		return none
@@ -682,9 +694,9 @@ pub fn find_first[T](array []T, predicate fn (elem T) bool) ?T {
 	return none
 }
 
-// find_last returns the last element that matches the given predicate
-// returns `none`, if there is no match found
-// Example: arrays.find_last([1, 2, 3, 4, 5], fn (arr int) bool { arr == 3}) // => 3
+// find_last returns the last element that matches the given predicate.
+// Returns `none` if no match is found.
+// Example: arrays.find_last([1, 2, 3, 4, 5], fn (i int) bool { return i == 3})? // => 3
 pub fn find_last[T](array []T, predicate fn (elem T) bool) ?T {
 	if array.len == 0 {
 		return none

@@ -223,7 +223,7 @@ pub fn flush_stderr() {
 	}
 }
 
-// print prints a message to stdout. Unlike `println` stdout is not automatically flushed.
+// print prints a message to stdout. Note that unlike `eprint`, stdout is not automatically flushed.
 [manualfree]
 pub fn print(s string) {
 	$if android && !termux {
@@ -238,7 +238,7 @@ pub fn print(s string) {
 	}
 }
 
-// println prints a message with a line end, to stdout. stdout is flushed.
+// println prints a message with a line end, to stdout. Note that unlike `eprintln`, stdout is not automatically flushed.
 [manualfree]
 pub fn println(s string) {
 	if s.str == 0 {
@@ -262,6 +262,12 @@ pub fn println(s string) {
 
 [manualfree]
 fn _writeln_to_fd(fd int, s string) {
+	$if !bultin_writeln_should_write_at_once ? {
+		lf := u8(`\n`)
+		_write_buf_to_fd(fd, s.str, s.len)
+		_write_buf_to_fd(fd, &lf, 1)
+		return
+	}
 	unsafe {
 		buf_len := s.len + 1 // space for \n
 		mut buf := malloc(buf_len)
@@ -282,7 +288,7 @@ fn _write_buf_to_fd(fd int, buf &u8, buf_len int) {
 	mut ptr := unsafe { buf }
 	mut remaining_bytes := isize(buf_len)
 	mut x := isize(0)
-	$if freestanding || vinix {
+	$if freestanding || vinix || bultin_write_buf_to_fd_should_use_c_write ? {
 		unsafe {
 			for remaining_bytes > 0 {
 				x = C.write(fd, ptr, remaining_bytes)

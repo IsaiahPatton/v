@@ -15,32 +15,31 @@ fn (mut p Parser) parse_array_type(expecting token.Kind, is_option bool) ast.Typ
 	// fixed array
 	if p.tok.kind in [.number, .name] {
 		mut fixed_size := 0
-		size_expr := p.expr(0)
+		mut size_expr := p.expr(0)
 		if p.pref.is_fmt {
 			fixed_size = 987654321
 		} else {
-			match size_expr {
+			match mut size_expr {
 				ast.IntegerLiteral {
 					fixed_size = size_expr.val.int()
 				}
 				ast.Ident {
-					mut show_non_const_error := false
+					mut show_non_const_error := true
 					if mut const_field := p.table.global_scope.find_const('${p.mod}.${size_expr.name}') {
 						if mut const_field.expr is ast.IntegerLiteral {
 							fixed_size = const_field.expr.val.int()
+							show_non_const_error = false
 						} else {
 							if mut const_field.expr is ast.InfixExpr {
 								// QUESTION: this should most likely no be done in the parser, right?
-								mut t := transformer.new_transformer(p.pref)
+								mut t := transformer.new_transformer_with_table(p.table,
+									p.pref)
 								folded_expr := t.infix_expr(mut const_field.expr)
 
 								if folded_expr is ast.IntegerLiteral {
 									fixed_size = folded_expr.val.int()
-								} else {
-									show_non_const_error = true
+									show_non_const_error = false
 								}
-							} else {
-								show_non_const_error = true
 							}
 						}
 					} else {
@@ -48,12 +47,25 @@ fn (mut p Parser) parse_array_type(expecting token.Kind, is_option bool) ast.Typ
 							// for vfmt purposes, pretend the constant does exist
 							// it may have been defined in another .v file:
 							fixed_size = 1
-						} else {
-							show_non_const_error = true
+							show_non_const_error = false
 						}
 					}
 					if show_non_const_error {
 						p.error_with_pos('non-constant array bound `${size_expr.name}`',
+							size_expr.pos)
+					}
+				}
+				ast.InfixExpr {
+					mut show_non_const_error := true
+					mut t := transformer.new_transformer_with_table(p.table, p.pref)
+					folded_expr := t.infix_expr(mut size_expr)
+
+					if folded_expr is ast.IntegerLiteral {
+						fixed_size = folded_expr.val.int()
+						show_non_const_error = false
+					}
+					if show_non_const_error {
+						p.error_with_pos('fixed array size cannot use non-constant eval value',
 							size_expr.pos)
 					}
 				}
@@ -64,6 +76,10 @@ fn (mut p Parser) parse_array_type(expecting token.Kind, is_option bool) ast.Typ
 			}
 		}
 		p.check(.rsbr)
+		p.fixed_array_dim++
+		defer {
+			p.fixed_array_dim--
+		}
 		elem_type := p.parse_type()
 		if elem_type.idx() == 0 {
 			// error is handled by parse_type
@@ -73,7 +89,7 @@ fn (mut p Parser) parse_array_type(expecting token.Kind, is_option bool) ast.Typ
 			p.error_with_pos('fixed size cannot be zero or negative', size_expr.pos())
 		}
 		idx := p.table.find_or_register_array_fixed(elem_type, fixed_size, size_expr,
-			!is_option && p.inside_fn_return)
+			p.fixed_array_dim == 1 && !is_option && p.inside_fn_return)
 		if elem_type.has_flag(.generic) {
 			return ast.new_type(idx).set_flag(.generic)
 		}
@@ -178,7 +194,7 @@ fn (mut p Parser) parse_thread_type() ast.Type {
 	if is_opt {
 		p.next()
 	}
-	if p.peek_tok.kind !in [.name, .key_mut, .amp, .lsbr] {
+	if p.peek_tok.kind !in [.name, .key_pub, .key_mut, .amp, .lsbr] {
 		p.next()
 		if is_opt {
 			mut ret_type := ast.void_type
@@ -192,12 +208,21 @@ fn (mut p Parser) parse_thread_type() ast.Type {
 	if !is_opt {
 		p.next()
 	}
-	ret_type := p.parse_type()
-	idx := p.table.find_or_register_thread(ret_type)
-	if ret_type.has_flag(.generic) {
-		return ast.new_type(idx).set_flag(.generic)
+	if is_opt || p.tok.kind in [.amp, .lsbr]
+		|| (p.tok.lit.len > 0 && p.tok.lit[0].is_capital())
+		|| ast.builtin_type_names_matcher.matches(p.tok.lit)
+		|| p.peek_tok.kind == .dot {
+		mut ret_type := p.parse_type()
+		if is_opt {
+			ret_type = ret_type.set_flag(.option)
+		}
+		idx := p.table.find_or_register_thread(ret_type)
+		if ret_type.has_flag(.generic) {
+			return ast.new_type(idx).set_flag(.generic)
+		}
+		return ast.new_type(idx)
 	}
-	return ast.new_type(idx)
+	return ast.thread_type
 }
 
 fn (mut p Parser) parse_multi_return_type() ast.Type {
@@ -254,9 +279,9 @@ fn (mut p Parser) parse_fn_type(name string, generic_types []ast.Type) ast.Type 
 
 	mut has_generic := false
 	line_nr := p.tok.line_nr
-	args, _, is_variadic := p.fn_args()
-	for arg in args {
-		if arg.typ.has_flag(.generic) {
+	params, _, is_variadic := p.fn_params()
+	for param in params {
+		if param.typ.has_flag(.generic) {
 			has_generic = true
 			break
 		}
@@ -273,7 +298,7 @@ fn (mut p Parser) parse_fn_type(name string, generic_types []ast.Type) ast.Type 
 	}
 	func := ast.Fn{
 		name: name
-		params: args
+		params: params
 		is_variadic: is_variadic
 		return_type: return_type
 		return_type_pos: return_type_pos
@@ -411,7 +436,7 @@ fn (mut p Parser) parse_type() ast.Type {
 		is_required_field := p.inside_struct_field_decl && p.tok.kind == .lsbr
 			&& p.peek_tok.kind == .name && p.peek_tok.lit == 'required'
 
-		if p.tok.line_nr > line_nr || p.tok.kind in [.comma, .rpar] || is_required_field {
+		if p.tok.line_nr > line_nr || p.tok.kind in [.comma, .rpar, .assign] || is_required_field {
 			mut typ := ast.void_type
 			if is_option {
 				typ = typ.set_flag(.option)
@@ -649,7 +674,7 @@ fn (mut p Parser) parse_any_type(language ast.Language, is_ptr bool, check_dot b
 					}
 					'any' {
 						if p.file_backend_mode != .js && p.mod != 'builtin' {
-							p.error('cannot use `any` type here, `any` will be implemented in V 0.4')
+							p.error('cannot use `any` type here')
 						}
 						ret = ast.any_type
 					}
@@ -749,6 +774,9 @@ fn (mut p Parser) parse_generic_inst_type(name string) ast.Type {
 		gts := p.table.sym(gt)
 		if gts.kind == .multi_return {
 			p.error_with_pos('cannot use multi return as generic concrete type', type_pos)
+		}
+		if gt.is_ptr() {
+			bs_name += '&'
 		}
 		bs_name += gts.name
 		bs_cname += gts.cname

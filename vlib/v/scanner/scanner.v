@@ -38,6 +38,7 @@ pub mut:
 	is_inter_start              bool   // for hacky string interpolation TODO simplify
 	is_inter_end                bool
 	is_enclosed_inter           bool
+	is_nested_enclosed_inter    bool
 	line_comment                string
 	last_lt                     int = -1 // position of latest <
 	is_started                  bool
@@ -46,7 +47,8 @@ pub mut:
 	is_print_rel_paths_on_error bool
 	quote                       u8  // which quote is used to denote current string: ' or "
 	inter_quote                 u8
-	nr_lines                    int // total number of lines in the source file that were scanned
+	just_closed_inter           bool // if is_enclosed_inter was set to false on the previous character: `}`
+	nr_lines                    int  // total number of lines in the source file that were scanned
 	is_vh                       bool // Keep newlines
 	is_fmt                      bool // Used for v fmt.
 	comments_mode               CommentsMode
@@ -128,6 +130,8 @@ pub fn new_scanner_file(file_path string, comments_mode CommentsMode, pref_ &pre
 	return s
 }
 
+const internally_generated_v_code = 'internally_generated_v_code'
+
 // new scanner from string.
 pub fn new_scanner(text string, comments_mode CommentsMode, pref_ &pref.Preferences) &Scanner {
 	mut s := &Scanner{
@@ -139,8 +143,8 @@ pub fn new_scanner(text string, comments_mode CommentsMode, pref_ &pref.Preferen
 		is_print_rel_paths_on_error: true
 		is_fmt: pref_.is_fmt
 		comments_mode: comments_mode
-		file_path: 'internal_memory'
-		file_base: 'internal_memory'
+		file_path: scanner.internally_generated_v_code
+		file_base: scanner.internally_generated_v_code
 	}
 	s.scan_all_tokens_in_buffer()
 	return s
@@ -179,11 +183,15 @@ fn (mut s Scanner) new_token(tok_kind token.Kind, lit string, len int) token.Tok
 	cidx := s.tidx
 	s.tidx++
 	line_offset := if tok_kind == .hash { 0 } else { 1 }
+	mut max_column := s.current_column() - len + 1
+	if max_column < 1 {
+		max_column = 1
+	}
 	return token.Token{
 		kind: tok_kind
 		lit: lit
 		line_nr: s.line_nr + line_offset
-		col: mathutil.max(1, s.current_column() - len + 1)
+		col: max_column
 		pos: s.pos - len + 1
 		len: len
 		tidx: cidx
@@ -207,11 +215,15 @@ fn (s &Scanner) new_eof_token() token.Token {
 fn (mut s Scanner) new_multiline_token(tok_kind token.Kind, lit string, len int, start_line int) token.Token {
 	cidx := s.tidx
 	s.tidx++
+	mut max_column := s.current_column() - len + 1
+	if max_column < 1 {
+		max_column = 1
+	}
 	return token.Token{
 		kind: tok_kind
 		lit: lit
 		line_nr: start_line + 1
-		col: mathutil.max(1, s.current_column() - len + 1)
+		col: max_column
 		pos: s.pos - len + 1
 		len: len
 		tidx: cidx
@@ -645,7 +657,7 @@ fn (mut s Scanner) text_scan() token.Token {
 		}
 		// End of $var, start next string
 		if s.is_inter_end {
-			if s.text[s.pos] == s.quote {
+			if s.text[s.pos] == s.quote || (s.text[s.pos] == s.inter_quote && s.is_enclosed_inter) {
 				s.is_inter_end = false
 				return s.new_token(.string, '', 1)
 			}
@@ -805,7 +817,7 @@ fn (mut s Scanner) text_scan() token.Token {
 			}
 			`{` {
 				// Skip { in `${` in strings
-				if s.is_inside_string {
+				if s.is_inside_string || s.is_enclosed_inter {
 					if s.text[s.pos - 1] == `$` {
 						continue
 					} else {
@@ -815,7 +827,7 @@ fn (mut s Scanner) text_scan() token.Token {
 				return s.new_token(.lcbr, '', 1)
 			}
 			`$` {
-				if s.is_inside_string {
+				if s.is_inside_string || s.is_enclosed_inter {
 					return s.new_token(.str_dollar, '', 1)
 				} else {
 					return s.new_token(.dollar, '', 1)
@@ -824,18 +836,28 @@ fn (mut s Scanner) text_scan() token.Token {
 			`}` {
 				// s = `hello $name !`
 				// s = `hello ${name} !`
-				if s.is_enclosed_inter && s.inter_cbr_count == 0 {
+				if (s.is_enclosed_inter || s.is_nested_enclosed_inter) && s.inter_cbr_count == 0 {
 					if s.pos < s.text.len - 1 {
 						s.pos++
 					} else {
 						s.error('unfinished string literal')
 					}
-					if s.text[s.pos] == s.quote {
+					if s.text[s.pos] == s.quote
+						|| (s.text[s.pos] == s.inter_quote && s.is_nested_enclosed_inter) {
 						s.is_inside_string = false
-						s.is_enclosed_inter = false
+						if s.is_nested_enclosed_inter {
+							s.is_nested_enclosed_inter = false
+						} else {
+							s.is_enclosed_inter = false
+						}
 						return s.new_token(.string, '', 1)
 					}
-					s.is_enclosed_inter = false
+					if s.is_nested_enclosed_inter {
+						s.is_nested_enclosed_inter = false
+					} else {
+						s.is_enclosed_inter = false
+					}
+					s.just_closed_inter = true
 					ident_string := s.ident_string()
 					return s.new_token(.string, ident_string, ident_string.len + 2) // + two quotes
 				} else {
@@ -872,6 +894,10 @@ fn (mut s Scanner) text_scan() token.Token {
 				return s.new_token(.comma, '', 1)
 			}
 			`@` {
+				// @[attr]
+				if s.text[s.pos + 1] == `[` {
+					return s.new_token(.at, '', 1)
+				}
 				mut name := ''
 				if nextc != `\0` {
 					s.pos++
@@ -891,6 +917,8 @@ fn (mut s Scanner) text_scan() token.Token {
 						at_error_msg += '\nAvailable compile time variables:\n${token.valid_at_tokens}'
 					}
 					s.error(at_error_msg)
+				} else {
+					// s.note('@keyword is being deprecated and then removed from V. Use `keyword_` or a different name (e.g. `typ` instead of `type`)')
 				}
 				return s.new_token(.name, name, name.len)
 			}
@@ -1083,9 +1111,17 @@ fn (mut s Scanner) text_scan() token.Token {
 					}
 					s.pos++
 					if s.should_parse_comment() {
-						mut comment := s.text[start..(s.pos - 1)].trim(' ')
+						mut comment := s.text[start..(s.pos - 1)]
 						if !comment.contains('\n') {
-							comment = '\x01' + comment
+							comment_pos := token.Pos{
+								line_nr: start_line
+								len: comment.len + 4
+								pos: start
+								col: s.current_column() - comment.len - 4
+							}
+							s.error_with_pos('inline comment is deprecated, please use line comment',
+								comment_pos)
+							comment = '\x01' + comment.trim(' ')
 						}
 						return s.new_multiline_token(.comment, comment, comment.len + 4,
 							start_line)
@@ -1144,16 +1180,19 @@ fn (mut s Scanner) ident_string() string {
 		col: s.pos - s.last_nl_pos - 1
 	}
 	q := s.text[s.pos]
-	is_quote := q == scanner.single_quote || q == scanner.double_quote
+	is_quote := q in [scanner.single_quote, scanner.double_quote]
 	is_raw := is_quote && s.pos > 0 && s.text[s.pos - 1] == `r` && !s.is_inside_string
 	is_cstr := is_quote && s.pos > 0 && s.text[s.pos - 1] == `c` && !s.is_inside_string
-	if is_quote {
+	// don't interpret quote as "start of string" quote when a string interpolation has
+	// just ended on the previous character meaning it's not the start of a new string
+	if is_quote && !s.just_closed_inter {
 		if s.is_inside_string || s.is_enclosed_inter || s.is_inter_start {
 			s.inter_quote = q
 		} else {
 			s.quote = q
 		}
 	}
+	s.just_closed_inter = false
 	mut n_cr_chars := 0
 	mut start := s.pos
 	start_char := s.text[start]
@@ -1215,12 +1254,21 @@ fn (mut s Scanner) ident_string() string {
 				}
 				u_escapes_pos << s.pos - 1
 			}
+			// Unknown escape sequence
+			if c !in [`x`, `u`, `e`, `n`, `r`, `t`, `v`, `a`, `f`, `b`, `\\`, `\``, `$`, `@`, `?`, `{`, `}`, `'`, `"`]
+				&& !c.is_digit() {
+				s.error('`${c.ascii_str()}` unknown escape sequence')
+			}
 		}
 		// ${var} (ignore in vfmt mode) (skip \$)
 		if prevc == `$` && c == `{` && !is_raw
 			&& s.count_symbol_before(s.pos - 2, scanner.backslash) % 2 == 0 {
 			s.is_inside_string = true
-			s.is_enclosed_inter = true
+			if s.is_enclosed_inter {
+				s.is_nested_enclosed_inter = true
+			} else {
+				s.is_enclosed_inter = true
+			}
 			// so that s.pos points to $ at the next step
 			s.pos -= 2
 			break
@@ -1463,17 +1511,23 @@ fn (mut s Scanner) ident_char() string {
 		u := c.runes()
 		if u.len != 1 {
 			if escaped_hex || escaped_unicode {
-				s.error('invalid character literal `${orig}` => `${c}` (${u}) (escape sequence did not refer to a singular rune)')
+				s.error_with_pos('invalid character literal `${orig}` => `${c}` (${u}) (escape sequence did not refer to a singular rune)',
+					lspos)
 			} else if u.len == 0 {
 				s.add_error_detail_with_pos('use quotes for strings, backticks for characters',
 					lspos)
-				s.error('invalid empty character literal `${orig}`')
+				s.error_with_pos('invalid empty character literal `${orig}`', lspos)
 			} else {
 				s.add_error_detail_with_pos('use quotes for strings, backticks for characters',
 					lspos)
-				s.error('invalid character literal `${orig}` => `${c}` (${u}) (more than one character)')
+				s.error_with_pos('invalid character literal `${orig}` => `${c}` (${u}) (more than one character)',
+					lspos)
 			}
 		}
+	} else if c == '\n' {
+		s.add_error_detail_with_pos('use quotes for strings, backticks for characters',
+			lspos)
+		s.error_with_pos('invalid character literal, use \`\\n\` instead', lspos)
 	}
 	// Escapes a `'` character
 	if c == "'" {
@@ -1511,7 +1565,10 @@ fn (mut s Scanner) eat_to_end_of_line() {
 
 [inline]
 fn (mut s Scanner) inc_line_number() {
-	s.last_nl_pos = mathutil.min(s.text.len - 1, s.pos)
+	s.last_nl_pos = s.text.len - 1
+	if s.last_nl_pos > s.pos {
+		s.last_nl_pos = s.pos
+	}
 	if s.is_crlf {
 		s.last_nl_pos++
 	}
@@ -1521,7 +1578,19 @@ fn (mut s Scanner) inc_line_number() {
 	}
 }
 
+pub fn (mut s Scanner) current_pos() token.Pos {
+	return token.Pos{
+		line_nr: s.line_nr
+		pos: s.pos
+		col: s.current_column() - 1
+	}
+}
+
 pub fn (mut s Scanner) note(msg string) {
+	if s.pref.notes_are_errors {
+		s.error_with_pos(msg, s.current_pos())
+		return
+	}
 	pos := token.Pos{
 		line_nr: s.line_nr
 		pos: s.pos
@@ -1557,14 +1626,13 @@ fn (mut s Scanner) eat_details() string {
 }
 
 pub fn (mut s Scanner) warn(msg string) {
+	s.warn_with_pos(msg, s.current_pos())
+}
+
+pub fn (mut s Scanner) warn_with_pos(msg string, pos token.Pos) {
 	if s.pref.warns_are_errors {
-		s.error(msg)
+		s.error_with_pos(msg, pos)
 		return
-	}
-	pos := token.Pos{
-		line_nr: s.line_nr
-		pos: s.pos
-		col: s.current_column() - 1
 	}
 	details := s.eat_details()
 	if s.pref.output_mode == .stdout && !s.pref.check_only {
@@ -1590,11 +1658,10 @@ pub fn (mut s Scanner) warn(msg string) {
 }
 
 pub fn (mut s Scanner) error(msg string) {
-	pos := token.Pos{
-		line_nr: s.line_nr
-		pos: s.pos
-		col: s.current_column() - 1
-	}
+	s.error_with_pos(msg, s.current_pos())
+}
+
+pub fn (mut s Scanner) error_with_pos(msg string, pos token.Pos) {
 	details := s.eat_details()
 	if s.pref.output_mode == .stdout && !s.pref.check_only {
 		util.show_compiler_message('error:',
@@ -1632,10 +1699,7 @@ fn (mut s Scanner) vet_error(msg string, fix vet.FixKind) {
 	ve := vet.Error{
 		message: msg
 		file_path: s.file_path
-		pos: token.Pos{
-			line_nr: s.line_nr
-			col: s.current_column() - 1
-		}
+		pos: s.current_pos()
 		kind: .error
 		fix: fix
 		typ: .default
@@ -1643,8 +1707,8 @@ fn (mut s Scanner) vet_error(msg string, fix vet.FixKind) {
 	s.vet_errors << ve
 }
 
-fn (mut s Scanner) trace(fbase string, message string) {
+fn (mut s Scanner) trace[T](fbase string, x &T) {
 	if s.file_base == fbase {
-		println('> s.trace | ${fbase:-10s} | ${message}')
+		println('> s.trace | ${fbase:-10s} | ${voidptr(x):16} | ${x}')
 	}
 }

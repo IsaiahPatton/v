@@ -83,8 +83,10 @@ fn (mut g Gen) stmt(node ast.Stmt) {
 			}
 
 			if unsupported {
-				g.warning('opcodes format: xx xx xx xx\nhash statements are not allowed with the native backend, use the C backend for extended C interoperability.',
-					node.pos)
+				if !g.pref.experimental {
+					g.warning('opcodes format: xx xx xx xx\nhash statements are not allowed with the native backend, use the C backend for extended C interoperability.',
+						node.pos)
+				}
 			}
 		}
 		ast.Module {}
@@ -95,10 +97,12 @@ fn (mut g Gen) stmt(node ast.Stmt) {
 			g.code_gen.gen_asm_stmt(node)
 		}
 		ast.AssertStmt {
-			g.code_gen.gen_assert(node)
+			g.gen_assert(node)
 		}
 		ast.GlobalDecl {
-			g.warning('globals are not supported yet', node.pos)
+			if !g.pref.experimental {
+				g.warning('globals are not supported yet', node.pos)
+			}
 		}
 		ast.Import {} // do nothing here
 		ast.StructDecl {}
@@ -322,4 +326,20 @@ fn (mut g Gen) for_in_stmt(node ast.ForInStmt) { // Work on that
 	} else {
 		g.v_error('for-in statement is not yet implemented', node.pos)
 	}
+}
+
+fn (mut g Gen) gen_assert(assert_node ast.AssertStmt) {
+	mut cjmp_addr := 0
+	ane := assert_node.expr
+	label := g.labels.new_label()
+	cjmp_addr = g.condition(ane, true)
+	g.labels.patches << LabelPatch{
+		id: label
+		pos: cjmp_addr
+	}
+	g.println('; jump to label ${label}')
+	g.expr(assert_node.expr)
+	g.code_gen.trap()
+	g.labels.addrs[label] = g.pos()
+	g.println('; label ${label}')
 }

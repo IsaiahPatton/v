@@ -3,7 +3,9 @@
 // that can be found in the LICENSE file.
 module time
 
-// parse_rfc3339 returns time from a date string in RFC 3339 datetime format.
+import strconv
+
+// parse_rfc3339 returns the time from a date string in RFC 3339 datetime format.
 // See also https://ijmacd.github.io/rfc3339-iso8601/ for a visual reference of
 // the differences between ISO-8601 and RFC 3339.
 pub fn parse_rfc3339(s string) !Time {
@@ -33,13 +35,13 @@ pub fn parse_rfc3339(s string) !Time {
 	}
 	// Check if sn is time only
 	if !parts[0].contains('-') && parts[0].contains(':') {
-		mut hour_, mut minute_, mut second_, mut microsecond_, mut unix_offset, mut is_local_time := 0, 0, 0, 0, i64(0), true
-		hour_, minute_, second_, microsecond_, unix_offset, is_local_time = parse_iso8601_time(parts[0])!
+		mut hour_, mut minute_, mut second_, mut microsecond_, mut nanosecond_, mut unix_offset, mut is_local_time := 0, 0, 0, 0, 0, i64(0), true
+		hour_, minute_, second_, microsecond_, nanosecond_, unix_offset, is_local_time = parse_iso8601_time(parts[0])!
 		t = new_time(Time{
 			hour: hour_
 			minute: minute_
 			second: second_
-			microsecond: microsecond_
+			nanosecond: nanosecond_
 		})
 		if is_local_time {
 			return t // Time is already local time
@@ -50,14 +52,14 @@ pub fn parse_rfc3339(s string) !Time {
 		} else if unix_offset > 0 {
 			unix_time += unix_offset
 		}
-		t = unix2(i64(unix_time), t.microsecond)
+		t = unix_nanosecond(i64(unix_time), t.nanosecond)
 		return t
 	}
 
 	return error_invalid_time(9, 'malformed date')
 }
 
-// parse returns time from a date string in "YYYY-MM-DD HH:mm:ss" format.
+// parse returns the time from a date string in "YYYY-MM-DD HH:mm:ss" format.
 pub fn parse(s string) !Time {
 	if s == '' {
 		return error_invalid_time(0, 'datetime string is empty')
@@ -79,12 +81,25 @@ pub fn parse(s string) !Time {
 	minute_ := hms[1]
 	second_ := hms[2]
 	//
-	iyear := ymd[0].int()
-	imonth := ymd[1].int()
-	iday := ymd[2].int()
-	ihour := hour_.int()
-	iminute := minute_.int()
-	isecond := second_.int()
+	iyear := strconv.atoi(ymd[0]) or {
+		return error_invalid_time(0, 'invalid year format: ${ymd[0]}')
+	}
+	imonth := strconv.atoi(ymd[1]) or {
+		return error_invalid_time(0, 'invalid month format: ${ymd[1]}')
+	}
+	iday := strconv.atoi(ymd[2]) or {
+		return error_invalid_time(0, 'invalid day format: ${ymd[2]}')
+	}
+	ihour := strconv.atoi(hour_) or {
+		return error_invalid_time(0, 'invalid hour format: ${hour_}')
+	}
+	iminute := strconv.atoi(minute_) or {
+		return error_invalid_time(0, 'invalid minute format: ${minute_}')
+	}
+	isecond := strconv.atoi(second_) or {
+		return error_invalid_time(0, 'invalid second format: ${second_}')
+	}
+
 	// eprintln('>> iyear: $iyear | imonth: $imonth | iday: $iday | ihour: $ihour | iminute: $iminute | isecond: $isecond')
 	if iyear > 9999 || iyear < -9999 {
 		return error_invalid_time(3, 'year must be between -10000 and 10000')
@@ -120,6 +135,7 @@ pub fn parse(s string) !Time {
 // YY - 2 digit year, 00..99
 // M - month, 1..12
 // MM - month, 2 digits, 01..12
+// MMM - month, three letters, Jan..Dec
 // MMMM - name of month
 // D - day of the month, 1..31
 // DD - day of the month, 01..31
@@ -156,9 +172,9 @@ pub fn parse_iso8601(s string) !Time {
 		return error_invalid_time(12, 'malformed date')
 	}
 	year, month, day := parse_iso8601_date(parts[0])!
-	mut hour_, mut minute_, mut second_, mut microsecond_, mut unix_offset, mut is_local_time := 0, 0, 0, 0, i64(0), true
+	mut hour_, mut minute_, mut second_, mut microsecond_, mut nanosecond_, mut unix_offset, mut is_local_time := 0, 0, 0, 0, 0, i64(0), true
 	if parts.len == 2 {
-		hour_, minute_, second_, microsecond_, unix_offset, is_local_time = parse_iso8601_time(parts[1])!
+		hour_, minute_, second_, microsecond_, nanosecond_, unix_offset, is_local_time = parse_iso8601_time(parts[1])!
 	}
 	mut t := new_time(
 		year: year
@@ -167,7 +183,7 @@ pub fn parse_iso8601(s string) !Time {
 		hour: hour_
 		minute: minute_
 		second: second_
-		microsecond: microsecond_
+		nanosecond: nanosecond_
 	)
 	if is_local_time {
 		return t // Time already local time
@@ -178,11 +194,11 @@ pub fn parse_iso8601(s string) !Time {
 	} else if unix_offset > 0 {
 		unix_time += unix_offset
 	}
-	t = unix2(i64(unix_time), t.microsecond)
+	t = unix_nanosecond(i64(unix_time), t.nanosecond)
 	return t
 }
 
-// parse_rfc2822 returns time from a date string in RFC 2822 datetime format.
+// parse_rfc2822 returns the time from a date string in RFC 2822 datetime format.
 pub fn parse_rfc2822(s string) !Time {
 	if s == '' {
 		return error_invalid_time(0, 'datetime string is empty')
@@ -222,7 +238,7 @@ fn parse_iso8601_date(s string) !(int, int, int) {
 	return year, month, day
 }
 
-fn parse_iso8601_time(s string) !(int, int, int, int, i64, bool) {
+fn parse_iso8601_time(s string) !(int, int, int, int, int, i64, bool) {
 	hour_ := 0
 	minute_ := 0
 	second_ := 0
@@ -266,6 +282,7 @@ fn parse_iso8601_time(s string) !(int, int, int, int, i64, bool) {
 		if count < 4 {
 			return error_invalid_time(10, 'malformed date')
 		}
+		nanosecond_ = microsecond_ * 1000
 	}
 	is_local_time := plus_min_z == `a` && count == 4
 	is_utc := plus_min_z == `Z` && count == 5
@@ -285,5 +302,6 @@ fn parse_iso8601_time(s string) !(int, int, int, int, i64, bool) {
 	if plus_min_z == `+` {
 		unix_offset *= -1
 	}
-	return hour_, minute_, second_, microsecond_, unix_offset, is_local_time
+	// eprintln('parse_iso8601_time s: $s | hour_: $hour_ | minute_: $minute_ | second_: $second_ | microsecond_: $microsecond_ | nanosecond_: $nanosecond_ | unix_offset: $unix_offset | is_local_time: $is_local_time')
+	return hour_, minute_, second_, microsecond_, nanosecond_, unix_offset, is_local_time
 }

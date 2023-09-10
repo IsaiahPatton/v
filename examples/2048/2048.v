@@ -54,17 +54,17 @@ const (
 			game_over_color: gx.rgb(190, 50, 50)
 			text_color: gx.black
 			tile_colors: [
-				gx.rgb(205, 193, 180), /* Empty / 0 tile */
-				gx.rgb(238, 228, 218), /* 2 */
-				gx.rgb(237, 224, 200), /* 4 */
-				gx.rgb(242, 177, 121), /* 8 */
-				gx.rgb(245, 149, 99), /* 16 */
-				gx.rgb(246, 124, 95), /* 32 */
-				gx.rgb(246, 94, 59), /* 64 */
-				gx.rgb(237, 207, 114), /* 128 */
-				gx.rgb(237, 204, 97), /* 256 */
-				gx.rgb(237, 200, 80), /* 512 */
-				gx.rgb(237, 197, 63), /* 1024 */
+				gx.rgb(205, 193, 180), // Empty / 0 tile
+				gx.rgb(238, 228, 218), // 2
+				gx.rgb(237, 224, 200), // 4
+				gx.rgb(242, 177, 121), // 8
+				gx.rgb(245, 149, 99), // 16
+				gx.rgb(246, 124, 95), // 32
+				gx.rgb(246, 94, 59), // 64
+				gx.rgb(237, 207, 114), // 128
+				gx.rgb(237, 204, 97), // 256
+				gx.rgb(237, 200, 80), // 512
+				gx.rgb(237, 197, 63), // 1024
 				gx.rgb(237, 194, 46),
 			]
 		},
@@ -909,23 +909,12 @@ fn (mut app App) showfps() {
 	}
 }
 
-$if emscripten ? {
-	#flag --embed-file ./examples/assets/fonts/RobotoMono-Regular.ttf@/assets/fonts/RobotoMono-Regular.ttf
-}
-
 fn main() {
 	mut app := &App{}
 	app.new_game()
 	mut font_path := os.resource_abs_path(os.join_path('..', 'assets', 'fonts', 'RobotoMono-Regular.ttf'))
 	$if android {
 		font_path = 'fonts/RobotoMono-Regular.ttf'
-	}
-	mut window_title_ := 'V 2048'
-	// TODO: Make emcc a real platform ifdef
-	$if emscripten ? {
-		// in emscripten, sokol uses `window_title` as the selector to the canvas it'll render to,
-		// and since `document.querySelector('V 2048')` isn't valid JS, we use `canvas` instead
-		window_title_ = 'canvas'
 	}
 	app.perf = &Perf{}
 	app.gg = gg.new_context(
@@ -934,7 +923,7 @@ fn main() {
 		height: default_window_height
 		sample_count: 4 // higher quality curves
 		create_window: true
-		window_title: window_title_
+		window_title: 'V 2048'
 		frame_fn: frame
 		event_fn: on_event
 		init_fn: init

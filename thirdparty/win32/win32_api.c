@@ -13,6 +13,10 @@ static is_win32_ui = false;
 static HWND hwnd;
 static PAINTSTRUCT ps;
 
+HWND get_hwnd() {
+	return hwnd;
+}
+
 HFONT my_create_font(int size) {
 	return CreateFont(size, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, ANSI_CHARSET, 
 				OUT_DEFAULT_PRECIS, CLIP_DFA_DISABLE, DEFAULT_QUALITY, DEFAULT_PITCH, TEXT("Arial"));
@@ -141,10 +145,10 @@ void win32_set_bg(int r, int g, int b) {
 // PS_DOT = 2
 void win32_draw_line(HDC hdc, int a, int b, int c, int d, COLORREF color, int style) {
 	HPEN hPen = CreatePen(style, 1, color);
-    HPEN hOldPen = SelectObject(hdc, hPen); 
-    MoveToEx(hdc, a, b, NULL);
-    LineTo(hdc, c, d);
-    SelectObject(hdc, hOldPen);
+	HPEN hOldPen = SelectObject(hdc, hPen); 
+	MoveToEx(hdc, a, b, NULL);
+	LineTo(hdc, c, d);
+	SelectObject(hdc, hOldPen);
 	DeleteObject(hPen);
 }
 
@@ -238,4 +242,16 @@ void draw_rect_filled_alpha(HDC hdc, int x, int y, int width, int height, COLORR
 
 	DeleteObject(hBitmap);
 	DeleteDC(hdcMem);
+}
+
+void DrawCell(HDC hdc, const RECT rcTarget, const HBRUSH hbrUpper, int rad) {
+	HRGN hRgnUpper = CreateRoundRectRgn(rcTarget.left, rcTarget.top, rcTarget.right, rcTarget.bottom, rad, rad);	  
+	FillRgn(hdc, hRgnUpper, hbrUpper);
+	DeleteObject(hRgnUpper);
+}
+
+void EmptyRoundRect(HDC hdc, const RECT rcTarget, const HBRUSH hbrUpper, int rad) {
+	HRGN hRgnUpper = CreateRoundRectRgn(rcTarget.left, rcTarget.top, rcTarget.right, rcTarget.bottom, rad, rad);	  
+	FrameRgn(hdc, hRgnUpper, hbrUpper, 1, 1);
+	DeleteObject(hRgnUpper);
 }

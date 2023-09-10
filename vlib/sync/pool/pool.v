@@ -24,9 +24,15 @@ mut:
 
 pub type ThreadCB = fn (mut p PoolProcessor, idx int, task_id int) voidptr
 
+fn empty_cb(mut p PoolProcessor, idx int, task_id int) voidptr {
+	unsafe {
+		return nil
+	}
+}
+
 pub struct PoolProcessorConfig {
 	maxjobs  int
-	callback ThreadCB
+	callback ThreadCB = empty_cb
 }
 
 // new_pool_processor returns a new PoolProcessor instance.
@@ -37,7 +43,7 @@ pub struct PoolProcessorConfig {
 //      thread in the pool will run for each item.
 //      The callback function will receive as parameters:
 //      1) the PoolProcessor instance, so it can call
-//            p.get_item<int>(idx) to get the actual item at index idx
+//            p.get_item[int](idx) to get the actual item at index idx
 //      2) idx - the index of the currently processed item
 //      3) task_id - the index of the worker thread in which the callback
 //            function is running.
