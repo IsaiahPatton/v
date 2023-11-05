@@ -6,7 +6,7 @@ module time
 #include <time.h>
 // #include <sysinfoapi.h>
 
-struct C.tm {
+pub struct C.tm {
 	tm_year int
 	tm_mon  int
 	tm_mday int
@@ -49,7 +49,7 @@ const (
 )
 
 // in most systems, these are __quad_t, which is an i64
-struct C.timespec {
+pub struct C.timespec {
 	tv_sec  i64
 	tv_nsec i64
 }
@@ -64,20 +64,20 @@ fn make_unix_time(t C.tm) i64 {
 
 fn init_win_time_freq() u64 {
 	f := u64(0)
-	C.QueryPerformanceFrequency(&f)
+	C.QueryPerformanceFrequency(voidptr(&f))
 	return f
 }
 
 fn init_win_time_start() u64 {
 	s := u64(0)
-	C.QueryPerformanceCounter(&s)
+	C.QueryPerformanceCounter(voidptr(&s))
 	return s
 }
 
 // sys_mono_now returns a *monotonically increasing time*, NOT a time adjusted for daylight savings, location etc.
 pub fn sys_mono_now() u64 {
 	tm := u64(0)
-	C.QueryPerformanceCounter(&tm) // XP or later never fail
+	C.QueryPerformanceCounter(voidptr(&tm)) // XP or later never fail
 	return (tm - time.start_time) * 1000000000 / time.freq_time
 }
 
@@ -86,7 +86,7 @@ pub fn sys_mono_now() u64 {
 [inline]
 fn vpc_now() u64 {
 	tm := u64(0)
-	C.QueryPerformanceCounter(&tm)
+	C.QueryPerformanceCounter(voidptr(&tm))
 	return tm
 }
 
@@ -112,7 +112,7 @@ pub fn (t Time) local() Time {
 		millisecond: u16(t.nanosecond / 1_000_000)
 	}
 	st_local := SystemTime{}
-	C.SystemTimeToTzSpecificLocalTime(unsafe { nil }, &st_utc, &st_local)
+	C.SystemTimeToTzSpecificLocalTime(unsafe { nil }, voidptr(&st_utc), voidptr(&st_local))
 	t_local := Time{
 		year: st_local.year
 		month: st_local.month
@@ -128,14 +128,14 @@ pub fn (t Time) local() Time {
 
 // win_now calculates current time using winapi to get higher resolution on windows
 // GetSystemTimeAsFileTime is used and converted to local time. It can resolve time
-// down to millisecond. Other more precice methods can be implemented in the future
+// down to millisecond. Other more precise methods can be implemented in the future
 fn win_now() Time {
 	ft_utc := C._FILETIME{}
 	C.GetSystemTimeAsFileTime(&ft_utc)
 	st_utc := SystemTime{}
-	C.FileTimeToSystemTime(&ft_utc, &st_utc)
+	C.FileTimeToSystemTime(&ft_utc, voidptr(&st_utc))
 	st_local := SystemTime{}
-	C.SystemTimeToTzSpecificLocalTime(unsafe { nil }, &st_utc, &st_local)
+	C.SystemTimeToTzSpecificLocalTime(unsafe { nil }, voidptr(&st_utc), voidptr(&st_local))
 	t := Time{
 		year: st_local.year
 		month: st_local.month
@@ -152,12 +152,12 @@ fn win_now() Time {
 
 // win_utc calculates current time using winapi to get higher resolution on windows
 // GetSystemTimeAsFileTime is used. It can resolve time down to millisecond
-// other more precice methods can be implemented in the future
+// other more precise methods can be implemented in the future
 fn win_utc() Time {
 	ft_utc := C._FILETIME{}
 	C.GetSystemTimeAsFileTime(&ft_utc)
 	st_utc := SystemTime{}
-	C.FileTimeToSystemTime(&ft_utc, &st_utc)
+	C.FileTimeToSystemTime(&ft_utc, voidptr(&st_utc))
 	t := Time{
 		year: st_utc.year
 		month: st_utc.month

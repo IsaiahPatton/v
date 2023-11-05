@@ -11,6 +11,8 @@ $if gcboehm ? {
 #flag -l ws2_32 -l crypt32 -l secur32 -l user32
 #include "vschannel.c"
 
+pub struct C.TlsContext {}
+
 fn C.new_tls_context() C.TlsContext
 
 fn (req &Request) ssl_do(port int, method Method, host_name string, path string) !Response {
@@ -22,7 +24,7 @@ fn (req &Request) ssl_do(port int, method Method, host_name string, path string)
 	$if trace_http_request ? {
 		eprintln('> ${sdata}')
 	}
-	length := C.request(&ctx, port, addr.to_wide(), sdata.str, &buff)
+	length := C.request(&ctx, port, addr.to_wide(), sdata.str, sdata.len, &buff)
 	C.vschannel_cleanup(&ctx)
 	response_text := unsafe { buff.vstring_with_len(length) }
 	if req.on_progress != unsafe { nil } {

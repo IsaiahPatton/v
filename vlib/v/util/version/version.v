@@ -2,7 +2,7 @@ module version
 
 import os
 
-pub const v_version = '0.4.1'
+pub const v_version = '0.4.2'
 
 // vhash() returns the build string C.V_COMMIT_HASH . See cmd/tools/gen_vc.v .
 pub fn vhash() string {
@@ -75,11 +75,6 @@ pub fn githash(should_get_from_filesystem bool) string {
 		}
 		break
 	}
-	mut buf := [50]u8{}
-	buf[0] = 0
-	unsafe {
-		bp := &buf[0]
-		C.snprintf(&char(bp), 50, c'%s', C.V_CURRENT_COMMIT_HASH)
-		return tos_clone(bp)
-	}
+
+	return @VCURRENTHASH
 }

@@ -5,7 +5,7 @@ module native
 
 import v.ast
 
-fn C.strtol(str &char, endptr &&char, base int) int
+fn C.strtol(str &char, endptr &&char, base i32) i32
 
 pub fn (mut g Gen) stmts(stmts []ast.Stmt) {
 	for stmt in stmts {
@@ -69,23 +69,20 @@ fn (mut g Gen) stmt(node ast.Stmt) {
 			g.for_stmt(node)
 		}
 		ast.HashStmt {
-			words := node.val.split(' ')
-			mut unsupported := false
-			for word in words {
-				if word.len != 2 {
-					unsupported = true
-					break
-				}
-				b := unsafe { C.strtol(&char(word.str), 0, 16) }
-				// b := word.u8()
-				// println('"$word" $b')
-				g.write8(b)
+			if !g.should_emit_hash_stmt(node) {
+				return
 			}
 
-			if unsupported {
-				if !g.pref.experimental {
-					g.warning('opcodes format: xx xx xx xx\nhash statements are not allowed with the native backend, use the C backend for extended C interoperability.',
+			match node.kind {
+				'include', 'preinclude', 'define', 'insert' {
+					g.v_error('#${node.kind} is not supported with the native backend',
 						node.pos)
+				}
+				'flag' {
+					// do nothing; flags are already handled when dispatching extern dependencies
+				}
+				else {
+					g.gen_native_hash_stmt(node)
 				}
 			}
 		}
@@ -121,7 +118,7 @@ fn (mut g Gen) gen_forc_stmt(node ast.ForCStmt) {
 	}
 	start := g.pos()
 	start_label := g.labels.new_label()
-	mut jump_addr := i64(0)
+	mut jump_addr := i32(0)
 	if node.has_cond {
 		cond := node.cond
 		match cond {
@@ -129,7 +126,7 @@ fn (mut g Gen) gen_forc_stmt(node ast.ForCStmt) {
 				match cond.left {
 					ast.Ident {
 						lit := cond.right as ast.IntegerLiteral
-						g.code_gen.cmp_var(cond.left as ast.Ident, lit.val.int())
+						g.code_gen.cmp_var(cond.left as ast.Ident, i32(lit.val.int()))
 						match cond.op {
 							.gt {
 								jump_addr = g.code_gen.cjmp(.jle)
@@ -161,7 +158,7 @@ fn (mut g Gen) gen_forc_stmt(node ast.ForCStmt) {
 	end_label := g.labels.new_label()
 	g.labels.patches << LabelPatch{
 		id: end_label
-		pos: int(jump_addr)
+		pos: jump_addr
 	}
 	g.println('; jump to label ${end_label}')
 	g.labels.branches << BranchLabel{
@@ -209,7 +206,7 @@ fn (mut g Gen) for_stmt(node ast.ForStmt) {
 		return
 	}
 	infix_expr := node.cond as ast.InfixExpr
-	mut jump_addr := 0 // location of `jne *00 00 00 00*`
+	mut jump_addr := i32(0) // location of `jne *00 00 00 00*`
 	start := g.pos()
 	start_label := g.labels.new_label()
 	g.labels.addrs[start_label] = start
@@ -224,7 +221,7 @@ fn (mut g Gen) for_stmt(node ast.ForStmt) {
 				}
 				ast.IntegerLiteral {
 					lit := infix_expr.right as ast.IntegerLiteral
-					g.code_gen.cmp_var(infix_expr.left as ast.Ident, lit.val.int())
+					g.code_gen.cmp_var(infix_expr.left as ast.Ident, i32(lit.val.int()))
 				}
 				else {
 					g.n_error('unhandled expression type')
@@ -329,7 +326,7 @@ fn (mut g Gen) for_in_stmt(node ast.ForInStmt) { // Work on that
 }
 
 fn (mut g Gen) gen_assert(assert_node ast.AssertStmt) {
-	mut cjmp_addr := 0
+	mut cjmp_addr := i32(0)
 	ane := assert_node.expr
 	label := g.labels.new_label()
 	cjmp_addr = g.condition(ane, true)
@@ -342,4 +339,38 @@ fn (mut g Gen) gen_assert(assert_node ast.AssertStmt) {
 	g.code_gen.trap()
 	g.labels.addrs[label] = g.pos()
 	g.println('; label ${label}')
+}
+
+fn (mut g Gen) gen_flag_hash_stmt(node ast.HashStmt) {
+	if node.main.contains('-l') {
+		g.linker_libs << node.main.all_after('-l').trim_space()
+	} else if node.main.contains('-L') {
+		g.linker_include_paths << node.main.all_after('-L').trim_space()
+	} else if node.main.contains('-D') || node.main.contains('-I') {
+		g.v_error('`-D` and `-I` flags are not supported with the native backend', node.pos)
+	} else {
+		g.v_error('unknown `#flag` format: `${node.main}`', node.pos)
+	}
+}
+
+fn (mut g Gen) gen_native_hash_stmt(node ast.HashStmt) {
+	words := node.val.split(' ')
+	mut unsupported := false
+	for word in words {
+		if word.len != 2 {
+			unsupported = true
+			break
+		}
+		b := unsafe { C.strtol(&char(word.str), 0, 16) }
+		// b := word.u8()
+		// println('"$word" $b')
+		g.write8(b)
+	}
+
+	if unsupported {
+		if !g.pref.experimental {
+			g.warning('opcodes format: xx xx xx xx\nhash statements are not allowed with the native backend, use the C backend for extended C interoperability.',
+				node.pos)
+		}
+	}
 }

@@ -1,6 +1,7 @@
 module builtin
 
-// struct C.FILE {}
+[typedef]
+pub struct C.FILE {}
 
 // <string.h>
 fn C.memcpy(dest voidptr, const_src voidptr, n usize) voidptr
@@ -152,7 +153,7 @@ fn C.sleep(seconds u32) u32
 fn C.usleep(usec u32) int
 
 [typedef]
-struct C.DIR {
+pub struct C.DIR {
 }
 
 fn C.opendir(&char) &C.DIR
@@ -225,6 +226,8 @@ fn C.sysctl(name &int, namelen u32, oldp voidptr, oldlenp voidptr, newp voidptr,
 
 [trusted]
 fn C._fileno(int) int
+
+type C.intptr_t = voidptr
 
 fn C._get_osfhandle(fd int) C.intptr_t
 
@@ -349,7 +352,7 @@ fn C.FindClose(hFindFile voidptr)
 // macro
 fn C.MAKELANGID(lgid voidptr, srtid voidptr) int
 
-fn C.FormatMessage(dwFlags u32, lpSource voidptr, dwMessageId u32, dwLanguageId u32, lpBuffer voidptr, nSize u32, arguments ...voidptr) u32
+fn C.FormatMessageW(dwFlags u32, lpSource voidptr, dwMessageId u32, dwLanguageId u32, lpBuffer voidptr, nSize u32, arguments ...voidptr) u32
 
 fn C.CloseHandle(voidptr) int
 
@@ -370,7 +373,7 @@ fn C.closesocket(int) int
 
 fn C.vschannel_init(&C.TlsContext)
 
-fn C.request(&C.TlsContext, int, &u16, &u8, &&u8) int
+fn C.request(&C.TlsContext, int, &u16, &u8, u32, &&u8) int
 
 fn C.vschannel_cleanup(&C.TlsContext)
 

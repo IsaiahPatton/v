@@ -38,7 +38,6 @@ pub fn (mut f Fmt) struct_decl(node ast.StructDecl, is_anon bool) {
 		field_types << ft
 		attrs_len := inline_attrs_len(field.attrs)
 		end_pos := field.pos.pos + field.pos.len
-		mut comments_len := 0 // Length of comments between field name and type
 		for comment in field.comments {
 			if comment.pos.pos >= end_pos {
 				if comment.pos.line_nr == field.pos.line_nr {
@@ -48,11 +47,8 @@ pub fn (mut f Fmt) struct_decl(node ast.StructDecl, is_anon bool) {
 				}
 				continue
 			}
-			if comment.pos.pos > field.pos.pos {
-				comments_len += '/* ${comment.text.trim_left('\x01')} */ '.len
-			}
 		}
-		field_aligns.add_info(comments_len + field.name.len, ft.len, field.pos.line_nr)
+		field_aligns.add_info(field.name.len, ft.len, field.pos.line_nr)
 		if field.has_default_expr {
 			default_expr_aligns.add_info(attrs_len, field_types[i].len, field.pos.line_nr,
 				use_threshold: true
@@ -149,7 +145,8 @@ pub fn (mut f Fmt) struct_decl(node ast.StructDecl, is_anon bool) {
 		f.mark_types_import_as_used(field.typ)
 		attrs_len := inline_attrs_len(field.attrs)
 		has_attrs := field.attrs.len > 0
-		if has_attrs {
+		// TODO: this will get removed in next stage
+		if has_attrs && !field.attrs_has_at {
 			f.write(strings.repeat(` `, field_align.max_type_len - field_types[i].len))
 			f.single_line_attrs(field.attrs, same_line: true)
 		}
@@ -170,6 +167,10 @@ pub fn (mut f Fmt) struct_decl(node ast.StructDecl, is_anon bool) {
 				f.indent--
 				inc_indent = false
 			}
+		}
+		if has_attrs && field.attrs_has_at {
+			// TODO: calculate correct padding
+			f.single_line_attrs(field.attrs, same_line: true)
 		}
 		// Handle comments after field type
 		if after_type_comments.len > 0 {

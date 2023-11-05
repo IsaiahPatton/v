@@ -73,6 +73,7 @@ fn (mut p Parser) call_expr(language ast.Language, mod string) ast.CallExpr {
 	}
 	if fn_name in p.imported_symbols {
 		fn_name = p.imported_symbols[fn_name]
+		p.register_used_import_for_symbol_name(fn_name)
 	}
 	comments := p.eat_comments(same_line: true)
 	pos.update_last_line(p.prev_tok.line_nr)
@@ -97,6 +98,11 @@ fn (mut p Parser) call_expr(language ast.Language, mod string) ast.CallExpr {
 }
 
 fn (mut p Parser) call_args() []ast.CallArg {
+	prev_inside_call_args := true
+	p.inside_call_args = true
+	defer {
+		p.inside_call_args = prev_inside_call_args
+	}
 	mut args := []ast.CallArg{}
 	start_pos := p.tok.pos()
 	for p.tok.kind != .rpar {
@@ -806,7 +812,7 @@ fn (mut p Parser) anon_fn() ast.AnonFn {
 		return_type: return_type
 		is_method: false
 	}
-	name := 'anon_fn_${p.unique_prefix}_${p.table.fn_type_signature(func)}_${p.tok.pos}'
+	name := p.table.get_anon_fn_name(p.unique_prefix, func, p.tok.pos)
 	keep_fn_name := p.cur_fn_name
 	p.cur_fn_name = name
 	if p.tok.kind == .lcbr {

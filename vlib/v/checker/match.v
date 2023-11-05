@@ -166,6 +166,11 @@ fn (mut c Checker) get_comptime_number_value(mut expr ast.Expr) ?i64 {
 	if mut expr is ast.IntegerLiteral {
 		return expr.val.i64()
 	}
+	if mut expr is ast.CastExpr {
+		if mut expr.expr is ast.IntegerLiteral {
+			return expr.expr.val.i64()
+		}
+	}
 	if mut expr is ast.Ident {
 		has_expr_mod_in_name := expr.name.contains('.')
 		expr_name := if has_expr_mod_in_name { expr.name } else { '${expr.mod}.${expr.name}' }
@@ -395,6 +400,9 @@ fn (mut c Checker) match_exprs(mut node ast.MatchExpr, cond_type_sym ast.TypeSym
 						is_exhaustive = false
 						unhandled << '`.${v}`'
 					}
+				}
+				if cond_type_sym.info.is_flag {
+					is_exhaustive = false
 				}
 			}
 			else {

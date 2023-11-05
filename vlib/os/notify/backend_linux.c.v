@@ -5,7 +5,7 @@ import os
 
 #insert "@VEXEROOT/vlib/os/notify/epoll.h"
 
-struct C.epoll_event {
+pub struct C.epoll_event {
 	events u32
 	data   C.epoll_data_t
 }
@@ -140,7 +140,7 @@ fn (mut en EpollNotifier) close() ! {
 // event_mask_to_flag is a helper function that converts a bitmask
 // returned by epoll_wait to FdEventType
 fn event_mask_to_flag(mask u32) FdEventType {
-	mut flags := FdEventType.read
+	mut flags := unsafe { FdEventType(0) }
 
 	if mask & notify.epoll_read != 0 {
 		flags.set(.read)

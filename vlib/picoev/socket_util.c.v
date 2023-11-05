@@ -99,7 +99,7 @@ fn fatal_socket_error(fd int) bool {
 	return true
 }
 
-// listen creates a listening tcp socket and returns its file decriptor
+// listen creates a listening tcp socket and returns its file descriptor
 fn listen(config Config) int {
 	// not using the `net` modules sockets, because not all socket options are defined
 	fd := C.socket(net.AddrFamily.ip, net.SocketType.tcp, 0)
@@ -125,18 +125,8 @@ fn listen(config Config) int {
 
 	// addr settings
 
-	sin_port := $if tinyc {
-		conv.hton16(u16(config.port))
-	} $else {
-		C.htons(config.port)
-	}
-
-	sin_addr := $if tinyc {
-		conv.hton32(u32(C.INADDR_ANY))
-	} $else {
-		C.htonl(C.INADDR_ANY)
-	}
-
+	sin_port := conv.hton16(u16(config.port))
+	sin_addr := conv.hton32(u32(C.INADDR_ANY))
 	mut addr := C.sockaddr_in{
 		sin_family: u8(C.AF_INET)
 		sin_port: sin_port

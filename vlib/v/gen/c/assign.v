@@ -17,7 +17,9 @@ fn (mut g Gen) expr_with_opt_or_block(expr ast.Expr, expr_typ ast.Type, var_expr
 			g.write('))')
 		}
 		g.writeln(';')
-		expr_var := if expr is ast.Ident && expr.is_auto_heap() {
+		expr_var := if expr is ast.Ident && expr.kind == .constant {
+			g.get_const_name(expr)
+		} else if expr is ast.Ident && expr.is_auto_heap() {
 			'(*${expr.name})'
 		} else {
 			'${expr}'
@@ -146,8 +148,7 @@ fn (mut g Gen) assign_stmt(node_ ast.AssignStmt) {
 	// Free the old value assigned to this string var (only if it's `str = [new value]`
 	// or `x.str = [new value]` )
 	mut af := g.is_autofree && !g.is_builtin_mod && node.op == .assign && node.left_types.len == 1
-		&& (node.left[0] is ast.Ident || node.left[0] is ast.SelectorExpr)
-	// node.left_types[0] in [ast.string_type, ast.array_type] &&
+		&& node.left[0] in [ast.Ident, ast.SelectorExpr]
 	mut sref_name := ''
 	mut type_to_free := ''
 	if af {
@@ -890,7 +891,13 @@ fn (mut g Gen) gen_cross_var_assign(node &ast.AssignStmt) {
 			ast.Ident {
 				left_typ := node.left_types[i]
 				left_sym := g.table.sym(left_typ)
-				anon_ctx := if g.anon_fn { '${closure_ctx}->' } else { '' }
+				mut anon_ctx := ''
+				if g.anon_fn {
+					obj := left.scope.find(left.name)
+					if obj is ast.Var && obj.is_inherited {
+						anon_ctx = '${closure_ctx}->'
+					}
+				}
 				if left_sym.kind == .function {
 					g.write_fn_ptr_decl(left_sym.info as ast.FnType, '_var_${left.pos.pos}')
 					g.writeln(' = ${anon_ctx}${c_name(left.name)};')

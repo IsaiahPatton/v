@@ -28,16 +28,16 @@ enum Select {
 
 // SocketType are the available sockets
 pub enum SocketType {
-	udp = C.SOCK_DGRAM
-	tcp = C.SOCK_STREAM
+	udp       = C.SOCK_DGRAM
+	tcp       = C.SOCK_STREAM
 	seqpacket = C.SOCK_SEQPACKET
 }
 
 // AddrFamily are the available address families
 pub enum AddrFamily {
-	unix = C.AF_UNIX
-	ip = C.AF_INET
-	ip6 = C.AF_INET6
+	unix   = C.AF_UNIX
+	ip     = C.AF_INET
+	ip6    = C.AF_INET6
 	unspec = C.AF_UNSPEC
 }
 
@@ -109,9 +109,15 @@ fn C.FD_ZERO(fdset &C.fd_set)
 
 fn C.FD_SET(fd int, fdset &C.fd_set)
 
-fn C.FD_ISSET(fd int, fdset &C.fd_set) bool
+fn C.FD_ISSET(fd int, fdset &C.fd_set) int
 
 fn C.inet_pton(family AddrFamily, saddr &char, addr voidptr) int
+
+fn C.photon_socket(domain AddrFamily, typ SocketType, protocol int) int
+fn C.photon_connect(int, &Addr, u32, timeout u64) int
+fn C.photon_accept(int, voidptr, int, timeout u64) int
+fn C.photon_send(int, voidptr, int, int, timeout u64) int
+fn C.photon_recv(int, voidptr, int, int, timeout u64) int
 
 [typedef]
 pub struct C.fd_set {}

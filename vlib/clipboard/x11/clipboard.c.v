@@ -18,7 +18,7 @@ $if freebsd {
 #include <X11/Xlib.h> # Please install a package with the X11 development headers, for example: `apt-get install libx11-dev`
 // X11
 [typedef]
-struct C.Display {
+pub struct C.Display {
 }
 
 type Window = u64
@@ -69,7 +69,7 @@ fn C.XFree(data voidptr)
 fn todo_del() {}
 
 [typedef]
-struct C.XSelectionRequestEvent {
+pub struct C.XSelectionRequestEvent {
 mut:
 	display   &C.Display = unsafe { nil } // Display the event was read from
 	owner     Window
@@ -81,7 +81,7 @@ mut:
 }
 
 [typedef]
-struct C.XSelectionEvent {
+pub struct C.XSelectionEvent {
 mut:
 	@type     int
 	display   &C.Display = unsafe { nil } // Display the event was read from
@@ -93,14 +93,14 @@ mut:
 }
 
 [typedef]
-struct C.XSelectionClearEvent {
+pub struct C.XSelectionClearEvent {
 mut:
 	window    Window
 	selection Atom
 }
 
 [typedef]
-struct C.XDestroyWindowEvent {
+pub struct C.XDestroyWindowEvent {
 mut:
 	window Window
 }
@@ -126,16 +126,16 @@ const (
 // in the future, maybe we can extend this
 // to support other mime types
 enum AtomType {
-	xa_atom = 0 // value 4
-	xa_string = 1 // value 31
-	targets = 2
-	clipboard = 3
-	primary = 4
-	secondary = 5
-	text = 6
+	xa_atom     = 0 // value 4
+	xa_string   = 1 // value 31
+	targets     = 2
+	clipboard   = 3
+	primary     = 4
+	secondary   = 5
+	text        = 6
 	utf8_string = 7
-	text_plain = 8
-	text_html = 9
+	text_plain  = 8
+	text_html   = 9
 }
 
 [heap]
@@ -433,7 +433,7 @@ fn (cb &Clipboard) pick_target(prop Property) Atom {
 		mut to_be_requested := Atom(0)
 
 		// This is higher than the maximum priority.
-		mut priority := math.max_i32
+		mut priority := int(math.max_i32)
 
 		for i in 0 .. prop.nitems {
 			// See if this data type is allowed and of higher priority (closer to zero)

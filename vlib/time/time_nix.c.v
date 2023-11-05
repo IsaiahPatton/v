@@ -7,7 +7,7 @@ module time
 #include <time.h>
 #include <errno.h>
 
-struct C.tm {
+pub struct C.tm {
 	tm_sec   int
 	tm_min   int
 	tm_hour  int
@@ -21,12 +21,12 @@ struct C.tm {
 
 fn C.timegm(&C.tm) C.time_t
 
-// prefering localtime_r over the localtime because
+// preferring localtime_r over the localtime because
 // from docs localtime_r is thread safe,
 fn C.localtime_r(t &C.time_t, tm &C.tm)
 
 fn make_unix_time(t C.tm) i64 {
-	return i64(C.timegm(&t))
+	return unsafe { i64(C.timegm(&t)) }
 }
 
 // local returns t with the location set to local time.

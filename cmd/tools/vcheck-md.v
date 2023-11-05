@@ -21,7 +21,7 @@ const (
 	show_progress                  = os.getenv('GITHUB_JOB') == '' && '-silent' !in os.args
 	non_option_args                = cmdline.only_non_options(os.args[2..])
 	is_verbose                     = os.getenv('VERBOSE') != ''
-	vcheckfolder                   = os.join_path(os.vtmp_dir(), 'v', 'vcheck_${os.getuid()}')
+	vcheckfolder                   = os.join_path(os.vtmp_dir(), 'vcheck_${os.getuid()}')
 	should_autofix                 = os.getenv('VAUTOFIX') != ''
 	vexe                           = @VEXE
 )
@@ -44,7 +44,6 @@ fn (v1 CheckResult) + (v2 CheckResult) CheckResult {
 fn main() {
 	if non_option_args.len == 0 || '-help' in os.args {
 		help.print_and_exit('check-md')
-		exit(0)
 	}
 	if '-all' in os.args {
 		println('´-all´ flag is deprecated. Please use ´v check-md .´ instead.')
@@ -265,7 +264,7 @@ fn (mut f MDFile) parse_line(lnumber int, line string) {
 
 struct Headline {
 	line  int
-	lable string
+	label string
 	level int
 }
 
@@ -277,7 +276,7 @@ type AnchorTarget = Anchor | Headline
 
 struct AnchorLink {
 	line  int
-	lable string
+	label string
 }
 
 struct AnchorData {
@@ -287,7 +286,7 @@ mut:
 }
 
 fn (mut ad AnchorData) add_links(line_number int, line string) {
-	query := r'\[(?P<lable>[^\]]+)\]\(\s*#(?P<link>[a-z0-9\-\_\x7f-\uffff]+)\)'
+	query := r'\[(?P<label>[^\]]+)\]\(\s*#(?P<link>[a-z0-9\-\_\x7f-\uffff]+)\)'
 	mut re := regex.regex_opt(query) or { panic(err) }
 	res := re.find_all_str(line)
 
@@ -296,7 +295,7 @@ fn (mut ad AnchorData) add_links(line_number int, line string) {
 		link := re.get_group_by_name(elem, 'link')
 		ad.links[link] << AnchorLink{
 			line: line_number
-			lable: re.get_group_by_name(elem, 'lable')
+			label: re.get_group_by_name(elem, 'label')
 		}
 	}
 }
@@ -308,7 +307,7 @@ fn (mut ad AnchorData) add_link_targets(line_number int, line string) {
 			link := create_ref_link(headline)
 			ad.anchors[link] << Headline{
 				line: line_number
-				lable: headline
+				label: headline
 				level: headline_start_pos
 			}
 		}
@@ -344,7 +343,7 @@ fn (mut ad AnchorData) check_link_target_match(fpath string, mut res CheckResult
 			found_error_warning = true
 			res.errors++
 			for brokenlink in linkdata {
-				eprintln(eline(fpath, brokenlink.line, 0, 'no link target found for existing link [${brokenlink.lable}](#${link})'))
+				eprintln(eline(fpath, brokenlink.line, 0, 'no link target found for existing link [${brokenlink.label}](#${link})'))
 			}
 		}
 	}
@@ -651,7 +650,7 @@ fn (mut f MDFile) report_not_formatted_example_if_needed(e VCodeExample, fmt_res
 	}
 	f.autofix_example(e, vfile) or {
 		if err is ExampleWasRewritten {
-			eprintln('>> f.path: ${f.path} | example from ${e.sline} to ${e.eline} was re-formated by vfmt')
+			eprintln('>> f.path: ${f.path} | example from ${e.sline} to ${e.eline} was re-formatted by vfmt')
 			return err
 		}
 		eprintln('>> f.path: ${f.path} | encountered error while autofixing the example: ${err}')

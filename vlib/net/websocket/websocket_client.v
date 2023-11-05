@@ -77,11 +77,11 @@ pub:
 // OPCode represents the supported websocket frame types
 pub enum OPCode {
 	continuation = 0x00
-	text_frame = 0x01
+	text_frame   = 0x01
 	binary_frame = 0x02
-	close = 0x08
-	ping = 0x09
-	pong = 0x0A
+	close        = 0x08
+	ping         = 0x09
+	pong         = 0x0A
 }
 
 [params]
@@ -262,12 +262,7 @@ pub fn (mut ws Client) write_ptr(bytes &u8, payload_len int, code OPCode) !int {
 		if payload_len <= 125 {
 			header[1] = u8(payload_len)
 		} else if payload_len > 125 && payload_len <= 0xffff {
-			len16 := $if tinyc {
-				conv.hton16(u16(payload_len))
-			} $else {
-				C.htons(payload_len)
-			}
-
+			len16 := conv.hton16(u16(payload_len))
 			header[1] = 126
 			unsafe { C.memcpy(&header[2], &len16, 2) }
 		} else if payload_len > 0xffff && payload_len <= 0x7fffffff {
@@ -283,11 +278,7 @@ pub fn (mut ws Client) write_ptr(bytes &u8, payload_len int, code OPCode) !int {
 			header[4] = masking_key[2]
 			header[5] = masking_key[3]
 		} else if payload_len > 125 && payload_len <= 0xffff {
-			len16 := $if tinyc {
-				conv.hton16(u16(payload_len))
-			} $else {
-				C.htons(payload_len)
-			}
+			len16 := conv.hton16(u16(payload_len))
 			header[1] = (126 | 0x80)
 			unsafe { C.memcpy(&header[2], &len16, 2) }
 			header[4] = masking_key[0]
@@ -356,11 +347,7 @@ pub fn (mut ws Client) close(code int, message string) ! {
 	ws.set_state(.closing)
 	// mut code32 := 0
 	if code > 0 {
-		code_ := $if tinyc {
-			conv.hton16(u16(code))
-		} $else {
-			C.htons(code)
-		}
+		code_ := conv.hton16(u16(code))
 		message_len := message.len + 2
 		mut close_frame := []u8{len: message_len}
 		close_frame[0] = u8(code_ & 0xFF)

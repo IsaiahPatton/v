@@ -117,37 +117,29 @@ fn (mut container PipelineContainer) init_pipeline() {
 	// FIXME(FireRedz): this looks kinda funny, find a better way to initialize pipeline.
 
 	// Alpha
-	mut alpha_pipdesc := gfx.PipelineDesc{
-		label: c'alpha-pipeline'
-	}
-
+	mut alpha_pipdesc := gfx.PipelineDesc{}
 	unsafe { vmemset(&alpha_pipdesc, 0, int(sizeof(alpha_pipdesc))) }
-
-	alpha_pipdesc.colors[0] = gfx.ColorState{
+	alpha_pipdesc.label = c'alpha-pipeline'
+	alpha_pipdesc.colors[0] = gfx.ColorTargetState{
 		blend: gfx.BlendState{
 			enabled: true
 			src_factor_rgb: .src_alpha
 			dst_factor_rgb: .one_minus_src_alpha
 		}
 	}
-
 	container.alpha = sgl.make_pipeline(&alpha_pipdesc)
 
 	// Add
-	mut add_pipdesc := gfx.PipelineDesc{
-		label: c'additive-pipeline'
-	}
-
+	mut add_pipdesc := gfx.PipelineDesc{}
 	unsafe { vmemset(&add_pipdesc, 0, int(sizeof(add_pipdesc))) }
-
-	add_pipdesc.colors[0] = gfx.ColorState{
+	add_pipdesc.label = c'additive-pipeline'
+	add_pipdesc.colors[0] = gfx.ColorTargetState{
 		blend: gfx.BlendState{
 			enabled: true
 			src_factor_rgb: .src_alpha
 			dst_factor_rgb: .one
 		}
 	}
-
 	container.add = sgl.make_pipeline(&add_pipdesc)
 }
 
@@ -168,7 +160,6 @@ pub mut:
 	height      int
 	clear_pass  gfx.PassAction
 	window      sapp.Desc
-	timage_pip  sgl.Pipeline       [deprecated: 'Use `Context.pipeline.alpha` instead!']
 	pipeline    &PipelineContainer = unsafe { nil }
 	config      Config
 	user_data   voidptr
@@ -263,10 +254,6 @@ fn gg_init_sokol_window(user_data voidptr) {
 	ctx.pipeline = &PipelineContainer{}
 	ctx.pipeline.init_pipeline()
 
-	// Keep the old pipeline for now, cuz v ui used it.
-	ctx.timage_pip = ctx.pipeline.alpha
-
-	//
 	if ctx.config.init_fn != unsafe { nil } {
 		$if android {
 			// NOTE on Android sokol can emit resize events *before* the init function is
@@ -469,7 +456,7 @@ pub fn new_context(cfg Config) &Context {
 			init_userdata_cb: gg_init_sokol_window
 			frame_userdata_cb: gg_frame_fn
 			event_userdata_cb: gg_event_fn
-			fail_userdata_cb: gg_fail_fn
+			// fail_userdata_cb: gg_fail_fn
 			cleanup_userdata_cb: gg_cleanup_fn
 			window_title: &char(cfg.window_title.str)
 			html5_canvas_name: &char(cfg.html5_canvas_name.str)
@@ -580,20 +567,20 @@ pub struct EndOptions {
 const dontcare_pass = gfx.PassAction{
 	colors: [
 		gfx.ColorAttachmentAction{
-			action: .dontcare
-			value: gfx.Color{1.0, 1.0, 1.0, 1.0}
+			load_action: .dontcare
+			clear_value: gfx.Color{1.0, 1.0, 1.0, 1.0}
 		},
 		gfx.ColorAttachmentAction{
-			action: .dontcare
-			value: gfx.Color{1.0, 1.0, 1.0, 1.0}
+			load_action: .dontcare
+			clear_value: gfx.Color{1.0, 1.0, 1.0, 1.0}
 		},
 		gfx.ColorAttachmentAction{
-			action: .dontcare
-			value: gfx.Color{1.0, 1.0, 1.0, 1.0}
+			load_action: .dontcare
+			clear_value: gfx.Color{1.0, 1.0, 1.0, 1.0}
 		},
 		gfx.ColorAttachmentAction{
-			action: .dontcare
-			value: gfx.Color{1.0, 1.0, 1.0, 1.0}
+			load_action: .dontcare
+			clear_value: gfx.Color{1.0, 1.0, 1.0, 1.0}
 		},
 	]!
 }

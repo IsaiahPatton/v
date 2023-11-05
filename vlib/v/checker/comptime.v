@@ -71,6 +71,11 @@ fn (mut c Checker) comptime_call(mut node ast.ComptimeCall) ast.Type {
 		if node.args.len == 1 {
 			embed_arg := node.args[0]
 			mut raw_path := ''
+			if embed_arg.expr is ast.AtExpr {
+				mut expr := embed_arg.expr
+				c.at_expr(mut expr)
+				raw_path = expr.val
+			}
 			if embed_arg.expr is ast.StringLiteral {
 				raw_path = embed_arg.expr.val
 			} else if embed_arg.expr is ast.Ident {
@@ -319,7 +324,7 @@ fn (mut c Checker) eval_comptime_const_expr(expr ast.Expr, nlevel int) ?ast.Comp
 		}
 		ast.SizeOf {
 			s, _ := c.table.type_size(expr.typ)
-			return s
+			return i64(s)
 		}
 		ast.FloatLiteral {
 			x := expr.val.f64()
@@ -356,8 +361,8 @@ fn (mut c Checker) eval_comptime_const_expr(expr ast.Expr, nlevel int) ?ast.Comp
 			if expr.typ == ast.i16_type {
 				return cast_expr_value.i16() or { return none }
 			}
-			if expr.typ == ast.int_type {
-				return cast_expr_value.int() or { return none }
+			if expr.typ == ast.i32_type {
+				return cast_expr_value.i32() or { return none }
 			}
 			if expr.typ == ast.i64_type {
 				return cast_expr_value.i64() or { return none }
@@ -616,6 +621,18 @@ enum ComptimeBranchSkipState {
 // comptime_if_branch checks the condition of a compile-time `if` branch. It returns `true`
 // if that branch's contents should be skipped (targets a different os for example)
 fn (mut c Checker) comptime_if_branch(mut cond ast.Expr, pos token.Pos) ComptimeBranchSkipState {
+	mut should_record_ident := false
+	mut is_user_ident := false
+	mut ident_name := ''
+	defer {
+		if should_record_ident {
+			if is_user_ident {
+				c.ct_user_defines[ident_name] = $res()
+			} else {
+				c.ct_system_defines[ident_name] = $res()
+			}
+		}
+	}
 	// TODO: better error messages here
 	match mut cond {
 		ast.BoolLiteral {
@@ -641,6 +658,9 @@ fn (mut c Checker) comptime_if_branch(mut cond ast.Expr, pos token.Pos) Comptime
 			if cond.op != .question {
 				c.error('invalid \$if postfix operator', cond.pos)
 			} else if mut cond.expr is ast.Ident {
+				should_record_ident = true
+				is_user_ident = true
+				ident_name = cond.expr.name
 				return if cond.expr.name in c.pref.compile_defines_all { .eval } else { .skip }
 			} else {
 				c.error('invalid `\$if` condition', cond.pos)
@@ -774,6 +794,9 @@ fn (mut c Checker) comptime_if_branch(mut cond ast.Expr, pos token.Pos) Comptime
 		}
 		ast.Ident {
 			cname := cond.name
+			should_record_ident = true
+			is_user_ident = false
+			ident_name = cname
 			if cname in ast.valid_comptime_if_os {
 				mut is_os_target_equal := true
 				if !c.pref.output_cross_c {

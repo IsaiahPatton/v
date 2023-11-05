@@ -281,6 +281,7 @@ pub fn (mut t Transformer) stmt(mut node ast.Stmt) ast.Stmt {
 				expr = t.expr(mut expr)
 			}
 		}
+		ast.SemicolonStmt {}
 		ast.SqlStmt {}
 		ast.StructDecl {
 			for mut field in node.fields {
@@ -493,7 +494,7 @@ pub fn (mut t Transformer) for_stmt(mut node ast.ForStmt) ast.Stmt {
 	node.cond = t.expr(mut node.cond)
 	match node.cond {
 		ast.BoolLiteral {
-			if !(node.cond as ast.BoolLiteral).val { // for false { ... } should be eleminated
+			if !(node.cond as ast.BoolLiteral).val { // for false { ... } should be eliminated
 				return ast.empty_stmt
 			}
 		}
@@ -538,7 +539,7 @@ pub fn (mut t Transformer) expr(mut node ast.Expr) ast.Expr {
 			}
 			node.len_expr = t.expr(mut node.len_expr)
 			node.cap_expr = t.expr(mut node.cap_expr)
-			node.default_expr = t.expr(mut node.default_expr)
+			node.init_expr = t.expr(mut node.init_expr)
 		}
 		ast.AsCast {
 			node.expr = t.expr(mut node.expr)

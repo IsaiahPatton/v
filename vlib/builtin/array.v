@@ -203,7 +203,7 @@ fn (mut a array) ensure_cap(required int) {
 }
 
 // repeat returns a new array with the given array elements repeated given times.
-// `cgen` will replace this with an apropriate call to `repeat_to_depth()`
+// `cgen` will replace this with an appropriate call to `repeat_to_depth()`
 //
 // This is a dummy placeholder that will be overridden by `cgen` with an appropriate
 // call to `repeat_to_depth()`. However the `checker` needs it here.
@@ -389,6 +389,16 @@ pub fn (mut a array) clear() {
 	a.len = 0
 }
 
+// reset quickly sets the bytes of all elements of the array to 0.
+// Useful mainly for numeric arrays. Note, that calling reset()
+// is not safe, when your array contains more complex elements,
+// like structs, maps, pointers etc, since setting them to 0,
+// can later lead to hard to find bugs.
+[unsafe]
+pub fn (mut a array) reset() {
+	unsafe { vmemset(a.data, 0, a.len * a.element_size) }
+}
+
 // trim trims the array length to `index` without modifying the allocated data.
 // If `index` is greater than `len` nothing will be changed.
 // Example: a.trim(3) // `a.len` is now <= 3
@@ -530,7 +540,7 @@ pub fn (mut a array) delete_last() {
 // Alternative: Slices can also be made with [start..end] notation
 // Alternative: `.slice_ni()` will always return an array.
 fn (a array) slice(start int, _end int) array {
-	mut end := _end
+	end := if _end == 2147483647 { a.len } else { _end } // max_int
 	$if !no_bounds_checking {
 		if start > end {
 			panic('array.slice: invalid slice index (${start} > ${end})')
@@ -565,7 +575,7 @@ fn (a array) slice(start int, _end int) array {
 // This function always return a valid array.
 fn (a array) slice_ni(_start int, _end int) array {
 	// a.flags.clear(.noslices)
-	mut end := _end
+	mut end := if _end == 2147483647 { a.len } else { _end } // max_int
 	mut start := _start
 
 	if start < 0 {
@@ -609,12 +619,6 @@ fn (a array) slice_ni(_start int, _end int) array {
 	return res
 }
 
-// used internally for [2..4]
-fn (a array) slice2(start int, _end int, end_max bool) array {
-	end := if end_max { a.len } else { _end }
-	return a.slice(start, end)
-}
-
 // clone_static_to_depth() returns an independent copy of a given array.
 // Unlike `clone_to_depth()` it has a value receiver and is used internally
 // for slice-clone expressions like `a[2..4].clone()` and in -autofree generated code.
@@ -623,7 +627,7 @@ fn (a array) clone_static_to_depth(depth int) array {
 }
 
 // clone returns an independent copy of a given array.
-// this will be overwritten by `cgen` with an apropriate call to `.clone_to_depth()`
+// this will be overwritten by `cgen` with an appropriate call to `.clone_to_depth()`
 // However the `checker` needs it here.
 pub fn (a &array) clone() array {
 	return unsafe { a.clone_to_depth(0) }
@@ -823,7 +827,7 @@ pub fn (a array) map(callback fn (voidptr) voidptr) array
 // being compared.
 //
 // Example: array.sort() // will sort the array in ascending order
-// Example: array.sort(b < a) // will sort the array in decending order
+// Example: array.sort(b < a) // will sort the array in descending order
 // Example: array.sort(b.name < a.name) // will sort descending by the .name field
 pub fn (mut a array) sort(callback fn (voidptr, voidptr) int)
 
@@ -966,20 +970,6 @@ pub fn copy(mut dst []u8, src []u8) int {
 		unsafe { vmemmove(&u8(dst.data), src.data, min) }
 	}
 	return min
-}
-
-// reduce executes a given reducer function on each element of the array,
-// resulting in a single output value.
-// NOTE: It exists as a method on `[]int` types only.
-// See also `arrays.reduce` for same name or `arrays.fold` for same functionality.
-[deprecated: 'use arrays.fold instead, this function has less flexibility than arrays.fold']
-[deprecated_after: '2022-10-11']
-pub fn (a []int) reduce(iter fn (int, int) int, accum_start int) int {
-	mut accum_ := accum_start
-	for i in a {
-		accum_ = iter(accum_, i)
-	}
-	return accum_
 }
 
 // grow_cap grows the array's capacity by `amount` elements.

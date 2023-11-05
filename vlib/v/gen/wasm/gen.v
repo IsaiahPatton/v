@@ -62,7 +62,11 @@ pub struct LoopBreakpoint {
 	name       string
 }
 
+[noreturn]
 pub fn (mut g Gen) v_error(s string, pos token.Pos) {
+	util.show_compiler_message('error:', pos: pos, file_path: g.file_path, message: s)
+	exit(1)
+	/*
 	if g.pref.output_mode == .stdout {
 		util.show_compiler_message('error:', pos: pos, file_path: g.file_path, message: s)
 		exit(1)
@@ -70,10 +74,11 @@ pub fn (mut g Gen) v_error(s string, pos token.Pos) {
 		g.errors << errors.Error{
 			file_path: g.file_path
 			pos: pos
-			reporter: .gen
+			reporter: .gen			
 			message: s
 		}
 	}
+	*/
 }
 
 pub fn (mut g Gen) warning(s string, pos token.Pos) {
@@ -318,7 +323,7 @@ pub fn (mut g Gen) bare_function_frame(func_start wasm.PatchPos) {
 		prolouge := g.func.patch_pos()
 		{
 			g.func.global_get(g.sp())
-			g.func.i32_const(g.stack_frame)
+			g.func.i32_const(i32(g.stack_frame))
 			g.func.sub(.i32_t)
 			if !g.is_leaf_function {
 				g.func.local_tee(g.bp())
@@ -330,7 +335,7 @@ pub fn (mut g Gen) bare_function_frame(func_start wasm.PatchPos) {
 		g.func.patch(func_start, prolouge)
 		if !g.is_leaf_function {
 			g.func.global_get(g.sp())
-			g.func.i32_const(g.stack_frame)
+			g.func.i32_const(i32(g.stack_frame))
 			g.func.add(.i32_t)
 			g.func.global_set(g.sp())
 		}
@@ -351,7 +356,7 @@ pub fn (mut g Gen) bare_function_end() {
 
 pub fn (mut g Gen) literalint(val i64, expected ast.Type) {
 	match g.get_wasm_type(expected) {
-		.i32_t { g.func.i32_const(val) }
+		.i32_t { g.func.i32_const(i32(val)) }
 		.i64_t { g.func.i64_const(val) }
 		.f32_t { g.func.f32_const(f32(val)) }
 		.f64_t { g.func.f64_const(f64(val)) }
@@ -361,7 +366,7 @@ pub fn (mut g Gen) literalint(val i64, expected ast.Type) {
 
 pub fn (mut g Gen) literal(val string, expected ast.Type) {
 	match g.get_wasm_type(expected) {
-		.i32_t { g.func.i32_const(val.int()) }
+		.i32_t { g.func.i32_const(i32(val.int())) }
 		.i64_t { g.func.i64_const(val.i64()) }
 		.f32_t { g.func.f32_const(val.f32()) }
 		.f64_t { g.func.f64_const(val.f64()) }
@@ -396,7 +401,7 @@ pub fn (mut g Gen) expr_with_cast(expr ast.Expr, got_type_raw ast.Type, expected
 pub fn (mut g Gen) handle_ptr_arithmetic(typ ast.Type) {
 	if typ.is_ptr() {
 		size, _ := g.pool.type_size(typ)
-		g.func.i32_const(size)
+		g.func.i32_const(i32(size))
 		g.func.mul(.i32_t)
 	}
 }
@@ -442,50 +447,6 @@ pub fn (mut g Gen) infix_expr(node ast.InfixExpr, expected ast.Type) {
 		node.left_type
 	}
 	g.func.cast(g.as_numtype(g.get_wasm_type(res_typ)), res_typ.is_signed(), g.as_numtype(g.get_wasm_type(expected)))
-}
-
-pub fn (mut g Gen) wasm_builtin(name string, node ast.CallExpr) {
-	for idx, arg in node.args {
-		g.expr(arg.expr, node.expected_arg_types[idx])
-	}
-
-	match name {
-		'__memory_grow' {
-			g.func.memory_grow()
-		}
-		'__memory_fill' {
-			g.func.memory_fill()
-		}
-		'__memory_copy' {
-			g.func.memory_copy()
-		}
-		'__memory_size' {
-			g.func.memory_size()
-		}
-		'__heap_base' {
-			if hp := g.heap_base {
-				g.func.global_get(hp)
-			}
-			hp := g.mod.new_global('__heap_base', false, .i32_t, false, wasm.constexpr_value(0))
-			g.func.global_get(hp)
-			g.heap_base = hp
-		}
-		'__reinterpret_f32_u32' {
-			g.func.reinterpret(.f32_t)
-		}
-		'__reinterpret_u32_f32' {
-			g.func.reinterpret(.i32_t)
-		}
-		'__reinterpret_f64_u64' {
-			g.func.reinterpret(.f64_t)
-		}
-		'__reinterpret_u64_f64' {
-			g.func.reinterpret(.i64_t)
-		}
-		else {
-			panic('unreachable')
-		}
-	}
 }
 
 pub fn (mut g Gen) prefix_expr(node ast.PrefixExpr, expected ast.Type) {
@@ -571,6 +532,11 @@ pub fn (mut g Gen) if_branch(ifexpr ast.IfExpr, expected ast.Type, unpacked_para
 }
 
 pub fn (mut g Gen) if_expr(ifexpr ast.IfExpr, expected ast.Type, existing_rvars []Var) {
+	if ifexpr.is_comptime {
+		g.comptime_if_expr(ifexpr, expected, existing_rvars)
+		return
+	}
+
 	params := if expected == ast.void_type {
 		[]wasm.ValType{}
 	} else if existing_rvars.len == 0 {
@@ -586,13 +552,6 @@ pub fn (mut g Gen) call_expr(node ast.CallExpr, expected ast.Type, existing_rvar
 	mut name := node.name
 
 	is_print := name in ['panic', 'println', 'print', 'eprintln', 'eprint']
-
-	if name in ['__memory_grow', '__memory_fill', '__memory_copy', '__memory_size', '__heap_base',
-		'__reinterpret_f32_u32', '__reinterpret_u32_f32', '__reinterpret_f64_u64',
-		'__reinterpret_u64_f64'] {
-		g.wasm_builtin(node.name, node)
-		return
-	}
 
 	if node.is_method {
 		name = '${g.table.get_type_name(node.receiver_type)}.${node.name}'
@@ -734,7 +693,7 @@ pub fn (mut g Gen) get_field_offset(typ ast.Type, name string) int {
 pub fn (mut g Gen) field_offset(typ ast.Type, name string) {
 	offset := g.get_field_offset(typ, name)
 	if offset != 0 {
-		g.func.i32_const(offset)
+		g.func.i32_const(i32(offset))
 		g.func.add(.i32_t)
 	}
 }
@@ -816,7 +775,7 @@ pub fn (mut g Gen) expr(node ast.Expr, expected ast.Type) {
 					g.func.local_get(tmp_voidptr_var)
 					g.load_field(ast.string_type, ast.int_type, 'len')
 				} else if ts.info is ast.ArrayFixed {
-					g.func.i32_const(ts.info.size)
+					g.func.i32_const(i32(ts.info.size))
 				} else {
 					panic('unreachable')
 				}
@@ -944,7 +903,7 @@ pub fn (mut g Gen) expr(node ast.Expr, expected ast.Type) {
 		}
 		ast.CharLiteral {
 			rns := serialise.eval_escape_codes_raw(node.val) or { panic('unreachable') }.runes()[0]
-			g.func.i32_const(rns)
+			g.func.i32_const(i32(rns))
 		}
 		ast.Ident {
 			v := g.get_var_from_ident(node)
@@ -1246,6 +1205,10 @@ pub fn (mut g Gen) expr_stmt(node ast.Stmt, expected ast.Type) {
 					g.set(v)
 				}
 			}
+		}
+		ast.AsmStmt {
+			// assumed expected == void
+			g.asm_stmt(node)
 		}
 		else {
 			g.w_error('wasm.expr_stmt(): unhandled node: ' + node.type_name())

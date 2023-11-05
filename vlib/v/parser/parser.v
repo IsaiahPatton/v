@@ -44,6 +44,7 @@ mut:
 	inside_for                bool
 	inside_fn                 bool // true even with implicit main
 	inside_fn_return          bool
+	inside_call_args          bool // true inside f(  ....  )
 	inside_unsafe_fn          bool
 	inside_str_interp         bool
 	inside_array_lit          bool
@@ -379,6 +380,7 @@ pub fn (mut p Parser) parse() &ast.File {
 		notices: notices
 		global_labels: p.global_labels
 		template_paths: p.template_paths
+		unique_prefix: p.unique_prefix
 	}
 }
 
@@ -801,6 +803,9 @@ fn (mut p Parser) top_stmt() ast.Stmt {
 			.comment {
 				return p.comment_stmt()
 			}
+			.semicolon {
+				return p.semicolon_stmt()
+			}
 			else {
 				return p.other_stmts(ast.empty_stmt)
 			}
@@ -868,7 +873,7 @@ fn (mut p Parser) other_stmts(cur_stmt ast.Stmt) ast.Stmt {
 			scope: p.scope
 			label_names: p.label_names
 		}
-	} else if p.pref.is_fmt {
+	} else if p.pref.is_fmt || p.pref.is_vet {
 		return p.stmt(false)
 	} else {
 		return p.error('bad top level statement ' + p.tok.str())
@@ -1122,10 +1127,21 @@ fn (mut p Parser) stmt(is_top_level bool) ast.Stmt {
 		.key_asm {
 			return p.asm_stmt(false)
 		}
+		.semicolon {
+			return p.semicolon_stmt()
+		}
 		// literals, 'if', etc. in here
 		else {
 			return p.parse_multi_expr(is_top_level)
 		}
+	}
+}
+
+fn (mut p Parser) semicolon_stmt() ast.SemicolonStmt {
+	pos := p.tok.pos()
+	p.check(.semicolon)
+	return ast.SemicolonStmt{
+		pos: pos
 	}
 }
 
@@ -1146,6 +1162,11 @@ fn (mut p Parser) asm_stmt(is_top_level bool) ast.AsmStmt {
 
 	p.check(.key_asm)
 	mut arch := pref.arch_from_string(p.tok.lit) or { pref.Arch._auto }
+
+	if is_top_level && arch == .wasm32 {
+		p.error("wasm doesn't support toplevel assembly")
+	}
+
 	mut is_volatile := false
 	mut is_goto := false
 	if p.tok.kind == .key_volatile {
@@ -1159,7 +1180,7 @@ fn (mut p Parser) asm_stmt(is_top_level bool) ast.AsmStmt {
 	}
 	if arch == ._auto && !p.pref.is_fmt {
 		if p.tok.lit == '' {
-			p.error('missing assembly architecture. Try i386, amd64 or arm64.')
+			p.error('missing assembly architecture. Try i386, amd64, arm64, or wasm.')
 		}
 		p.error('unknown assembly architecture')
 	}
@@ -1201,7 +1222,7 @@ fn (mut p Parser) asm_stmt(is_top_level bool) ast.AsmStmt {
 		if is_directive {
 			p.next()
 		}
-		if p.tok.kind in [.key_in, .key_lock, .key_orelse] { // `in`, `lock`, `or` are v keywords that are also x86/arm/riscv instructions.
+		if p.tok.kind in [.key_in, .key_lock, .key_orelse, .key_select, .key_return] { // `in`, `lock`, `or`, `select`, `return` are v keywords that are also x86/arm/riscv/wasm instructions.
 			name += p.tok.kind.str()
 			p.next()
 		} else if p.tok.kind == .number {
@@ -1211,13 +1232,19 @@ fn (mut p Parser) asm_stmt(is_top_level bool) ast.AsmStmt {
 			name += p.tok.lit
 			p.check(.name)
 		}
-		// dots are part of instructions for some riscv extensions
-		if arch in [.rv32, .rv64] {
+		// dots are part of instructions for some riscv extensions and webassembly
+		if arch in [.rv32, .rv64, .wasm32] {
 			for p.tok.kind == .dot {
 				name += '.'
 				p.next()
-				name += p.tok.lit
-				p.check(.name)
+				// wasm: i32.const
+				if arch == .wasm32 && p.tok.kind == .key_const {
+					name += 'const'
+					p.next()
+				} else {
+					name += p.tok.lit
+					p.check(.name)
+				}
 			}
 		}
 		mut is_label := false
@@ -1237,6 +1264,11 @@ fn (mut p Parser) asm_stmt(is_top_level bool) ast.AsmStmt {
 				match p.tok.kind {
 					.name {
 						args << p.reg_or_alias()
+					}
+					.string {
+						// wasm: call 'wasi_unstable' 'proc_exit'
+						args << p.tok.lit
+						p.next()
 					}
 					.number {
 						number_lit := p.parse_number_literal()
@@ -1277,6 +1309,9 @@ fn (mut p Parser) asm_stmt(is_top_level bool) ast.AsmStmt {
 						break
 					}
 					.lsbr {
+						if arch == .wasm32 {
+							p.error("wasm doesn't have addressing operands")
+						}
 						mut addressing := p.asm_addressing()
 						addressing.segment = segment
 						args << addressing
@@ -1738,14 +1773,11 @@ fn (mut p Parser) asm_ios(output bool) []ast.AsmIO {
 	return res
 }
 
-fn (mut p Parser) expr_list() ([]ast.Expr, []ast.Comment) {
+fn (mut p Parser) expr_list() []ast.Expr {
 	mut exprs := []ast.Expr{}
-	mut comments := []ast.Comment{}
 	for {
 		expr := p.expr(0)
-		if expr is ast.Comment {
-			comments << expr
-		} else {
+		if expr !is ast.Comment {
 			exprs << expr
 			if p.tok.kind != .comma {
 				break
@@ -1753,7 +1785,7 @@ fn (mut p Parser) expr_list() ([]ast.Expr, []ast.Comment) {
 			p.next()
 		}
 	}
-	return exprs, comments
+	return exprs
 }
 
 fn (mut p Parser) is_attributes() bool {
@@ -2123,7 +2155,7 @@ fn (mut p Parser) parse_multi_expr(is_top_level bool) ast.Stmt {
 	mut defer_vars := p.defer_vars.clone()
 	p.defer_vars = []ast.Ident{}
 
-	left, left_comments := p.expr_list()
+	left := p.expr_list()
 
 	if !(p.inside_defer && p.tok.kind == .decl_assign) {
 		defer_vars << p.defer_vars
@@ -2141,7 +2173,7 @@ fn (mut p Parser) parse_multi_expr(is_top_level bool) ast.Stmt {
 	}
 	// TODO remove translated
 	if p.tok.kind in [.assign, .decl_assign] || p.tok.kind.is_assign() {
-		return p.partial_assign_stmt(left, left_comments)
+		return p.partial_assign_stmt(left)
 	} else if !p.pref.translated && !p.is_translated && !p.pref.is_fmt && !p.pref.is_vet
 		&& tok.kind !in [.key_if, .key_match, .key_lock, .key_rlock, .key_select] {
 		for node in left {
@@ -2160,7 +2192,6 @@ fn (mut p Parser) parse_multi_expr(is_top_level bool) ast.Stmt {
 		return ast.ExprStmt{
 			expr: left0
 			pos: left0.pos()
-			comments: left_comments
 			is_expr: p.inside_for
 		}
 	}
@@ -2170,7 +2201,6 @@ fn (mut p Parser) parse_multi_expr(is_top_level bool) ast.Stmt {
 			pos: tok.pos()
 		}
 		pos: pos
-		comments: left_comments
 	}
 }
 
@@ -2765,17 +2795,17 @@ fn (mut p Parser) name_expr() ast.Expr {
 				}
 			}
 		}
-	} else if (p.peek_tok.kind == .lcbr || is_generic_struct_init)
+	} else if !known_var && (p.peek_tok.kind == .lcbr || is_generic_struct_init)
 		&& (!p.inside_match || (p.inside_select && prev_tok_kind == .arrow && lit0_is_capital))
 		&& !p.inside_match_case && (!p.inside_if || p.inside_select)
-		&& (!p.inside_for || p.inside_select) && !known_var {
+		&& (!p.inside_for || p.inside_select) {
 		return p.struct_init(p.mod + '.' + p.tok.lit, .normal, is_option) // short_syntax: false
 	} else if p.peek_tok.kind == .lcbr
 		&& ((p.inside_if && lit0_is_capital && p.tok.lit.len > 1 && !known_var && language == .v)
 		|| (p.inside_match_case && p.tok.kind == .name && p.peek_tok.is_next_to(p.tok))) {
 		// `if a == Foo{} {...}` or `match foo { Foo{} {...} }`
 		return p.struct_init(p.mod + '.' + p.tok.lit, .normal, is_option)
-	} else if p.peek_tok.kind == .dot && (lit0_is_capital && !known_var && language == .v) {
+	} else if p.peek_tok.kind == .dot && lit0_is_capital && !known_var && language == .v {
 		// T.name
 		if p.is_generic_name() {
 			pos := p.tok.pos()
@@ -2799,7 +2829,7 @@ fn (mut p Parser) name_expr() ast.Expr {
 				scope: p.scope
 			}
 		}
-		if p.peek_token(2).kind == .name && p.peek_token(3).kind == .lpar && !known_var {
+		if !known_var && p.peek_token(2).kind == .name && p.peek_token(3).kind == .lpar {
 			if lit0_is_capital && p.peek_tok.kind == .dot && language == .v {
 				// New static method call
 				p.expr_mod = ''
@@ -2807,6 +2837,29 @@ fn (mut p Parser) name_expr() ast.Expr {
 			} else {
 				p.error_with_pos('${lit0_is_capital} the receiver of the method call must be an instantiated object, e.g. `foo.bar()`',
 					p.tok.pos())
+			}
+		}
+		// `anon_fn := Foo.bar` assign static method
+		if !known_var && lit0_is_capital && p.peek_tok.kind == .dot && language == .v
+			&& p.peek_token(2).kind == .name {
+			if func := p.table.find_fn(p.prepend_mod(p.tok.lit) + '__static__' + p.peek_token(2).lit) {
+				fn_type := ast.new_type(p.table.find_or_register_fn_type(func, false,
+					true))
+				pos := p.tok.pos()
+				typ_name := p.check_name()
+				p.check(.dot)
+				field_name := p.check_name()
+				pos.extend(p.tok.pos())
+				return ast.Ident{
+					name: p.prepend_mod(typ_name) + '__static__' + field_name
+					mod: p.mod
+					kind: .function
+					info: ast.IdentFn{
+						typ: fn_type
+					}
+					pos: pos
+					scope: p.scope
+				}
 			}
 		}
 		// `Color.green`
@@ -2844,7 +2897,7 @@ fn (mut p Parser) name_expr() ast.Expr {
 				typ: typ
 				pos: type_pos
 			}
-		} else if !known_var && language == .v && (p.table.known_type(p.tok.lit) || lit0_is_capital)
+		} else if !known_var && language == .v && (lit0_is_capital || p.table.known_type(p.tok.lit))
 			&& p.peek_tok.kind == .pipe {
 			start_pos := p.tok.pos()
 			mut to_typ := p.parse_type()
@@ -3493,7 +3546,7 @@ fn (mut p Parser) module_decl() ast.Module {
 		// as it creates a wrong position when extended
 		// to module_pos
 		n_pos := p.tok.pos()
-		if module_pos.line_nr == n_pos.line_nr && p.tok.kind != .comment && p.tok.kind != .eof {
+		if module_pos.line_nr == n_pos.line_nr && p.tok.kind !in [.comment, .eof, .semicolon] {
 			if p.tok.kind == .name {
 				p.unexpected_with_pos(n_pos,
 					prepend_msg: '`module ${name}`, you can only declare one module,'
@@ -3520,6 +3573,9 @@ fn (mut p Parser) module_decl() ast.Module {
 		is_skipped: is_skipped
 		pos: module_pos
 		name_pos: name_pos
+	}
+	if p.tok.kind == .semicolon {
+		p.check(.semicolon)
 	}
 	if !is_skipped {
 		p.table.module_attrs[p.mod] = module_attrs
@@ -3643,11 +3699,10 @@ fn (mut p Parser) import_stmt() ast.Import {
 			syms_pos: initial_syms_pos
 			pos: import_node.pos.extend(initial_syms_pos)
 		}
-		p.register_used_import(mod_alias) // no `unused import` msg for parent
 	}
 	pos_t := p.tok.pos()
 	if import_pos.line_nr == pos_t.line_nr {
-		if p.tok.kind !in [.lcbr, .eof, .comment] {
+		if p.tok.kind !in [.lcbr, .eof, .comment, .semicolon] {
 			p.error_with_pos('cannot import multiple modules at a time', pos_t)
 			return import_node
 		}
@@ -3655,6 +3710,9 @@ fn (mut p Parser) import_stmt() ast.Import {
 	import_node.comments = p.eat_comments(same_line: true)
 	import_node.next_comments = p.eat_comments(follow_up: true)
 	p.imports[mod_alias] = mod_name
+	if p.tok.kind == .semicolon {
+		p.check(.semicolon)
+	}
 	// if mod_name !in p.table.imports {
 	p.table.imports << mod_name
 	p.ast_imports << import_node
@@ -3816,8 +3874,7 @@ fn (mut p Parser) return_stmt() ast.Return {
 		}
 	}
 	// return exprs
-	exprs, comments2 := p.expr_list()
-	comments << comments2
+	exprs := p.expr_list()
 	end_pos := exprs.last().pos()
 	return ast.Return{
 		exprs: exprs
@@ -3998,13 +4055,15 @@ fn (mut p Parser) enum_decl() ast.EnumDecl {
 			enum_attrs[val] = attrs
 			p.attrs = []
 		}
+		comments := p.eat_comments(same_line: true)
+		next_comments := p.eat_comments()
 		fields << ast.EnumField{
 			name: val
 			pos: pos
 			expr: expr
 			has_expr: has_expr
-			comments: p.eat_comments(same_line: true)
-			next_comments: p.eat_comments()
+			comments: comments
+			next_comments: next_comments
 			attrs: attrs
 		}
 	}
@@ -4025,13 +4084,16 @@ fn (mut p Parser) enum_decl() ast.EnumDecl {
 			}
 		}
 		pubfn := if p.mod == 'main' { 'fn' } else { 'pub fn' }
+		all_bits_set_value := '0b' + '1'.repeat(fields.len)
 		p.codegen('
 //
 [inline] ${pubfn} (    e &${enum_name}) is_empty() bool           { return  ${senum_type}(*e) == 0 }
 [inline] ${pubfn} (    e &${enum_name}) has(flag ${enum_name}) bool { return  (${senum_type}(*e) &  (${senum_type}(flag))) != 0 }
 [inline] ${pubfn} (    e &${enum_name}) all(flag ${enum_name}) bool { return  (${senum_type}(*e) &  (${senum_type}(flag))) == ${senum_type}(flag) }
 [inline] ${pubfn} (mut e  ${enum_name}) set(flag ${enum_name})      { unsafe{ *e = ${enum_name}(${senum_type}(*e) |  (${senum_type}(flag))) } }
+[inline] ${pubfn} (mut e  ${enum_name}) set_all()                   { unsafe{ *e = ${enum_name}(${all_bits_set_value}) } }
 [inline] ${pubfn} (mut e  ${enum_name}) clear(flag ${enum_name})    { unsafe{ *e = ${enum_name}(${senum_type}(*e) & ~(${senum_type}(flag))) } }
+[inline] ${pubfn} (mut e  ${enum_name}) clear_all()                 { unsafe{ *e = ${enum_name}(0) } }
 [inline] ${pubfn} (mut e  ${enum_name}) toggle(flag ${enum_name})   { unsafe{ *e = ${enum_name}(${senum_type}(*e) ^  (${senum_type}(flag))) } }
 //
 ')
@@ -4088,11 +4150,18 @@ fn (mut p Parser) type_decl() ast.TypeDecl {
 	if p.disallow_declarations_in_script_mode() {
 		return ast.SumTypeDecl{}
 	}
-	name := p.check_name()
+	mut name := p.check_name()
+	mut language := ast.Language.v
 	if name.len == 1 && name[0].is_capital() {
-		p.error_with_pos('single letter capital names are reserved for generic template types',
-			name_pos)
-		return ast.FnTypeDecl{}
+		if name == 'C' && p.tok.kind == .dot {
+			p.next() // .
+			name = 'C.' + p.check_name()
+			language = .c
+		} else {
+			p.error_with_pos('single letter capital names are reserved for generic template types',
+				name_pos)
+			return ast.FnTypeDecl{}
+		}
 	}
 	if name in p.imported_symbols {
 		p.error_with_pos('cannot register alias `${name}`, this type was already imported',
@@ -4177,7 +4246,7 @@ fn (mut p Parser) type_decl() ast.TypeDecl {
 	parent_sym := p.table.sym(parent_type)
 	pidx := parent_type.idx()
 	p.check_for_impure_v(parent_sym.language, decl_pos)
-	prepend_mod_name := p.prepend_mod(name)
+	prepend_mod_name := if language == .v { p.prepend_mod(name) } else { name } // `C.time_t`, not `time.C.time_t`
 	idx := p.table.register_sym(ast.TypeSymbol{
 		kind: .alias
 		name: prepend_mod_name

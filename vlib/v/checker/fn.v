@@ -11,13 +11,14 @@ fn (mut c Checker) fn_decl(mut node ast.FnDecl) {
 			eprintln('>>> post processing node.name: ${node.name:-30} | ${node.generic_names} <=> ${c.table.cur_concrete_types}')
 		}
 	}
-	// notice vweb route methods (non-generic method)
-	if node.generic_names.len > 0 {
+	// record the vweb route methods (public non-generic methods):
+	if node.generic_names.len > 0 && node.is_pub {
 		typ_vweb_result := c.table.find_type_idx('vweb.Result')
 		if node.return_type == typ_vweb_result {
 			rec_sym := c.table.sym(node.receiver.typ)
 			if rec_sym.kind == .struct_ {
 				if _ := c.table.find_field_with_embeds(rec_sym, 'Context') {
+					// there is no point in the message here, for methods that are not public; since they will not be available as routes anyway
 					c.note('generic method routes of vweb will be skipped', node.pos)
 				}
 			}
@@ -124,6 +125,9 @@ fn (mut c Checker) fn_decl(mut node ast.FnDecl) {
 			if parent_sym.info is ast.ArrayFixed {
 				c.table.find_or_register_array_fixed(parent_sym.info.elem_type, parent_sym.info.size,
 					parent_sym.info.size_expr, true)
+			}
+			if return_sym.name == 'byte' {
+				c.warn('byte is deprecated, use u8 instead', node.return_type_pos)
 			}
 		}
 		final_return_sym := c.table.final_sym(node.return_type)
@@ -263,32 +267,34 @@ fn (mut c Checker) fn_decl(mut node ast.FnDecl) {
 				}
 			}
 			if param.name == node.mod && param.name != 'main' {
-				c.add_error_detail('Module name duplicates will become errors after 2023/10/31.')
-				c.note('duplicate of a module name `${param.name}`', param.pos)
+				c.error('duplicate of a module name `${param.name}`', param.pos)
 			}
 			// Check if parameter name is already registered as imported module symbol
 			if c.check_import_sym_conflict(param.name) {
 				c.error('duplicate of an import symbol `${param.name}`', param.pos)
 			}
+			if arg_typ_sym.kind == .alias && arg_typ_sym.name == 'byte' {
+				c.warn('byte is deprecated, use u8 instead', param.type_pos)
+			}
 		}
-		// Check if function name is already registered as imported module symbol
-		if !node.is_method && c.check_import_sym_conflict(node.short_name) {
-			c.error('duplicate of an import symbol `${node.short_name}`', node.pos)
+		if !node.is_method {
+			// Check if function name is already registered as imported module symbol
+			if c.check_import_sym_conflict(node.short_name) {
+				c.error('duplicate of an import symbol `${node.short_name}`', node.pos)
+			}
+			if node.params.len == 0 && node.name.after_char(`.`) == 'init' {
+				if node.is_pub {
+					c.error('fn `init` must not be public', node.pos)
+				}
+				if node.return_type != ast.void_type {
+					c.error('fn `init` cannot have a return type', node.pos)
+				}
+			}
+			if !c.is_builtin_mod && node.mod == 'main'
+				&& node.name.after_char(`.`) in reserved_type_names {
+				c.error('top level declaration cannot shadow builtin type', node.pos)
+			}
 		}
-	}
-	if node.language == .v && node.name.after_char(`.`) == 'init' && !node.is_method
-		&& node.params.len == 0 {
-		if node.is_pub {
-			c.error('fn `init` must not be public', node.pos)
-		}
-		if node.return_type != ast.void_type {
-			c.error('fn `init` cannot have a return type', node.pos)
-		}
-	}
-
-	if node.language == .v && node.mod == 'main' && node.name.after_char(`.`) in reserved_type_names
-		&& !node.is_method && !c.is_builtin_mod {
-		c.error('top level declaration cannot shadow builtin type', node.pos)
 	}
 	if node.return_type != ast.Type(0) {
 		if !c.ensure_type_exists(node.return_type, node.return_type_pos) {
@@ -480,7 +486,21 @@ fn (mut c Checker) anon_fn(mut node ast.AnonFn) ast.Type {
 			c.error('original `${parent_var.name}` is immutable, declare it with `mut` to make it mutable',
 				var.pos)
 		}
-		var.typ = parent_var.typ
+		if parent_var.expr is ast.IfGuardExpr {
+			sym := c.table.sym(parent_var.expr.expr_type)
+			if sym.info is ast.MultiReturn {
+				for i, v in parent_var.expr.vars {
+					if v.name == var.name {
+						var.typ = sym.info.types[i]
+						break
+					}
+				}
+			} else {
+				var.typ = parent_var.expr.expr_type.clear_flags(.option, .result)
+			}
+		} else {
+			var.typ = parent_var.typ
+		}
 		if var.typ.has_flag(.generic) {
 			has_generic = true
 		}
@@ -531,7 +551,8 @@ fn (mut c Checker) call_expr(mut node ast.CallExpr) ast.Type {
 			if arg.typ != ast.string_type {
 				continue
 			}
-			if arg.expr in [ast.Ident, ast.StringLiteral, ast.SelectorExpr] {
+			if arg.expr in [ast.Ident, ast.StringLiteral, ast.SelectorExpr]
+				|| (arg.expr is ast.CallExpr && arg.expr.or_block.kind != .absent) {
 				// Simple expressions like variables, string literals, selector expressions
 				// (`x.field`) can't result in allocations and don't need to be assigned to
 				// temporary vars.
@@ -570,7 +591,7 @@ fn (mut c Checker) call_expr(mut node ast.CallExpr) ast.Type {
 }
 
 fn (mut c Checker) builtin_args(mut node ast.CallExpr, fn_name string, func ast.Fn) {
-	c.inside_println_arg = true
+	c.inside_casting_to_str = true
 	c.expected_type = ast.string_type
 	node.args[0].typ = c.expr(mut node.args[0].expr)
 	arg := node.args[0]
@@ -580,9 +601,11 @@ fn (mut c Checker) builtin_args(mut node ast.CallExpr, fn_name string, func ast.
 	} else if arg.typ == ast.char_type && arg.typ.nr_muls() == 0 {
 		c.error('`${fn_name}` cannot print type `char` directly, print its address or cast it to an integer instead',
 			node.pos)
+	} else if arg.expr is ast.ArrayDecompose {
+		c.error('`${fn_name}` cannot print variadic values', node.pos)
 	}
 	c.fail_if_unreadable(arg.expr, arg.typ, 'argument to print')
-	c.inside_println_arg = false
+	c.inside_casting_to_str = false
 	node.return_type = ast.void_type
 	c.set_node_expected_arg_types(mut node, func)
 
@@ -1212,7 +1235,7 @@ fn (mut c Checker) fn_call(mut node ast.CallExpr, mut continue_check &bool) ast.
 		// ... but 2. disallow passing non-pointers - that is very rarely what the user wanted,
 		// it can lead to codegen errors (except for 'magic' functions like `json.encode` that,
 		// the compiler has special codegen support for), so it should be opt in, that is it
-		// shoould require an explicit voidptr(x) cast (and probably unsafe{} ?) .
+		// should require an explicit voidptr(x) cast (and probably unsafe{} ?) .
 		if call_arg.typ != param.typ && (param.typ == ast.voidptr_type
 			|| final_param_sym.idx == ast.voidptr_type_idx
 			|| param.typ == ast.nil_type || final_param_sym.idx == ast.nil_type_idx)
@@ -2587,6 +2610,7 @@ fn (mut c Checker) array_builtin_method_call(mut node ast.CallExpr, left_type as
 	mut elem_typ := ast.void_type
 	if method_name == 'slice' && !c.is_builtin_mod {
 		c.error('.slice() is a private method, use `x[start..end]` instead', node.pos)
+		return ast.void_type
 	}
 	array_info := if left_sym.info is ast.Array {
 		left_sym.info as ast.Array
@@ -2595,8 +2619,29 @@ fn (mut c Checker) array_builtin_method_call(mut node ast.CallExpr, left_type as
 	}
 	elem_typ = array_info.elem_type
 	if method_name in ['filter', 'map', 'any', 'all'] {
-		// position of `it` doesn't matter
-		scope_register_it(mut node.scope, node.pos, elem_typ)
+		if node.args.len > 0 && mut node.args[0].expr is ast.LambdaExpr {
+			if node.args[0].expr.params.len != 1 {
+				c.error('lambda expressions used in the builtin array methods require exactly 1 parameter',
+					node.args[0].expr.pos)
+				return ast.void_type
+			}
+			if method_name == 'map' {
+				c.lambda_expr_fix_type_of_param(mut node.args[0].expr, mut node.args[0].expr.params[0],
+					elem_typ)
+				le_type := c.expr(mut node.args[0].expr.expr)
+				// eprintln('>>>>> node.args[0].expr: ${ast.Expr(node.args[0].expr)} | elem_typ: ${elem_typ} | etype: ${le_type}')
+				c.support_lambda_expr_one_param(elem_typ, le_type, mut node.args[0].expr)
+			} else {
+				c.support_lambda_expr_one_param(elem_typ, ast.bool_type, mut node.args[0].expr)
+			}
+		} else {
+			// position of `it` doesn't matter
+			scope_register_it(mut node.scope, node.pos, elem_typ)
+		}
+	} else if method_name == 'sorted_with_compare' && node.args.len == 1 {
+		if node.args.len > 0 && mut node.args[0].expr is ast.LambdaExpr {
+			c.support_lambda_expr_in_sort(elem_typ.ref(), ast.int_type, mut node.args[0].expr)
+		}
 	} else if method_name == 'sort' || method_name == 'sorted' {
 		if method_name == 'sort' {
 			if node.left is ast.CallExpr {
@@ -2611,7 +2656,9 @@ fn (mut c Checker) array_builtin_method_call(mut node ast.CallExpr, left_type as
 		if node.args.len > 1 {
 			c.error('expected 0 or 1 argument, but got ${node.args.len}', node.pos)
 		} else if node.args.len == 1 {
-			if node.args[0].expr is ast.InfixExpr {
+			if mut node.args[0].expr is ast.LambdaExpr {
+				c.support_lambda_expr_in_sort(elem_typ.ref(), ast.bool_type, mut node.args[0].expr)
+			} else if node.args[0].expr is ast.InfixExpr {
 				if node.args[0].expr.op !in [.gt, .lt] {
 					c.error('`.${method_name}()` can only use `<` or `>` comparison',
 						node.pos)
@@ -2665,6 +2712,7 @@ fn (mut c Checker) array_builtin_method_call(mut node ast.CallExpr, left_type as
 		arg_type = c.check_expr_opt_call(arg.expr, c.expr(mut arg.expr))
 	}
 	if method_name == 'map' {
+		// eprintln('>>>>>>> map node.args[0].expr: ${node.args[0].expr}, left_type: ${left_type} | elem_typ: ${elem_typ} | arg_type: ${arg_type}')
 		// check fn
 		c.check_map_and_filter(true, elem_typ, node)
 		arg_sym := c.table.sym(arg_type)
@@ -2771,25 +2819,19 @@ fn (mut c Checker) array_builtin_method_call(mut node ast.CallExpr, left_type as
 }
 
 fn scope_register_it(mut s ast.Scope, pos token.Pos, typ ast.Type) {
-	s.register(ast.Var{
-		name: 'it'
-		pos: pos
-		typ: typ
-		is_used: true
-	})
+	scope_register_var_name(mut s, pos, typ, 'it')
 }
 
 fn scope_register_a_b(mut s ast.Scope, pos token.Pos, typ ast.Type) {
+	scope_register_var_name(mut s, pos, typ.ref(), 'a')
+	scope_register_var_name(mut s, pos, typ.ref(), 'b')
+}
+
+fn scope_register_var_name(mut s ast.Scope, pos token.Pos, typ ast.Type, name string) {
 	s.register(ast.Var{
-		name: 'a'
+		name: name
 		pos: pos
-		typ: typ.ref()
-		is_used: true
-	})
-	s.register(ast.Var{
-		name: 'b'
-		pos: pos
-		typ: typ.ref()
+		typ: typ
 		is_used: true
 	})
 }

@@ -13,6 +13,8 @@ import runtime
 
 pub const github_job = os.getenv('GITHUB_JOB')
 
+pub const runner_os = os.getenv('RUNNER_OS') // GitHub runner OS
+
 pub const show_start = os.getenv('VTEST_SHOW_START') == '1'
 
 pub const hide_skips = os.getenv('VTEST_HIDE_SKIP') == '1'
@@ -59,6 +61,7 @@ pub mut:
 	nmessage_idx  int // currently printed message index
 	failed_cmds   shared []string
 	reporter      Reporter = Reporter(NormalReporter{})
+	hash          string // used during testing in temporary directory and file names to prevent collisions when files and directories are created in a test file.
 }
 
 pub fn (mut ts TestSession) add_failed_cmd(cmd string) {
@@ -185,6 +188,7 @@ pub fn new_test_session(_vargs string, will_compile bool) TestSession {
 		// is only available on macos for now, and it is not yet trivial enough to
 		// build/install on the CI:
 		skip_files << 'examples/coroutines/simple_coroutines.v'
+		skip_files << 'examples/coroutines/coroutines_bench.v'
 		$if msvc {
 			skip_files << 'vlib/v/tests/const_comptime_eval_before_vinit_test.v' // _constructor used
 			skip_files << 'vlib/v/tests/project_with_cpp_code/compiling_cpp_files_with_a_cplusplus_compiler_test.v'
@@ -219,19 +223,29 @@ pub fn new_test_session(_vargs string, will_compile bool) TestSession {
 			skip_files << 'examples/pendulum-simulation/parallel.v'
 			skip_files << 'examples/pendulum-simulation/parallel_with_iw.v'
 			skip_files << 'examples/pendulum-simulation/sequential.v'
+			if testing.github_job == 'tcc' {
+				// TODO: fix these by adding declarations for the missing functions in the prebuilt tcc
+				skip_files << 'vlib/net/mbedtls/mbedtls_compiles_test.v'
+				skip_files << 'vlib/net/ssl/ssl_compiles_test.v'
+			}
+		}
+		if testing.runner_os != 'Linux' || testing.github_job != 'tcc' {
+			skip_files << 'examples/c_interop_wkhtmltopdf.v' // needs installation of wkhtmltopdf from https://github.com/wkhtmltopdf/packaging/releases
+			skip_files << 'examples/call_v_from_python/test.v' // the example only makes sense to be compiled, when python is installed
+			skip_files << 'examples/call_v_from_ruby/test.v' // the example only makes sense to be compiled, when ruby is installed
+			skip_files << 'vlib/vweb/vweb_app_test.v' // imports the `sqlite` module, which in turn includes sqlite3.h
+		}
+		$if !macos {
+			skip_files << 'examples/macos_tray/tray.v'
 		}
 		if testing.github_job == 'ubuntu-docker-musl' {
 			skip_files << 'vlib/net/openssl/openssl_compiles_test.v'
+			skip_files << 'vlib/x/ttf/ttf_test.v'
 		}
 		if testing.github_job == 'tests-sanitize-memory-clang' {
 			skip_files << 'vlib/net/openssl/openssl_compiles_test.v'
 		}
-		if testing.github_job == 'windows-tcc' {
-			// TODO: fix these by adding declarations for the missing functions in the prebuilt tcc
-			skip_files << 'vlib/net/mbedtls/mbedtls_compiles_test.v'
-			skip_files << 'vlib/net/ssl/ssl_compiles_test.v'
-		}
-		if testing.github_job != 'sokol-shaders-can-be-compiled' {
+		if testing.github_job != 'misc-tooling' {
 			// These examples need .h files that are produced from the supplied .glsl files,
 			// using by the shader compiler tools in https://github.com/floooh/sokol-tools-bin/archive/pre-feb2021-api-changes.tar.gz
 			skip_files << 'examples/sokol/simple_shader_glsl/simple_shader.v'
@@ -241,22 +255,10 @@ pub fn new_test_session(_vargs string, will_compile bool) TestSession {
 			skip_files << 'examples/sokol/05_instancing_glsl/rt_glsl.v'
 			// Skip obj_viewer code in the CI
 			skip_files << 'examples/sokol/06_obj_viewer/show_obj.v'
-		}
-		if testing.github_job != 'ubuntu-tcc' {
-			skip_files << 'examples/c_interop_wkhtmltopdf.v' // needs installation of wkhtmltopdf from https://github.com/wkhtmltopdf/packaging/releases
-			skip_files << 'examples/call_v_from_python/test.v' // the example only makes sense to be compiled, when python is installed
-			skip_files << 'examples/call_v_from_ruby/test.v' // the example only makes sense to be compiled, when ruby is installed
-			// the ttf_test.v is not interactive, but needs X11 headers to be installed, which is done only on ubuntu-tcc for now
-			skip_files << 'vlib/x/ttf/ttf_test.v'
-			skip_files << 'vlib/vweb/vweb_app_test.v' // imports the `sqlite` module, which in turn includes sqlite3.h
-		}
-		if testing.github_job != 'audio-examples' {
+			// skip the audio examples too on most CI jobs
 			skip_files << 'examples/sokol/sounds/melody.v'
 			skip_files << 'examples/sokol/sounds/wav_player.v'
 			skip_files << 'examples/sokol/sounds/simple_sin_tones.v'
-		}
-		$if !macos {
-			skip_files << 'examples/macos_tray/tray.v'
 		}
 		// examples/wasm/mandelbrot/mandelbrot.v requires special compilation flags: `-b wasm -os browser`, skip it for now:
 		skip_files << 'examples/wasm/mandelbrot/mandelbrot.v'
@@ -274,7 +276,8 @@ pub fn new_test_session(_vargs string, will_compile bool) TestSession {
 	vargs := _vargs.replace('-progress', '')
 	vexe := pref.vexe_path()
 	vroot := os.dir(vexe)
-	new_vtmp_dir := setup_new_vtmp_folder()
+	hash := '${sync.thread_id().hex()}_${time.sys_mono_now()}'
+	new_vtmp_dir := setup_new_vtmp_folder(hash)
 	if term.can_show_color_on_stderr() {
 		os.setenv('VCOLORS', 'always', true)
 	}
@@ -286,6 +289,7 @@ pub fn new_test_session(_vargs string, will_compile bool) TestSession {
 		show_stats: '-stats' in vargs.split(' ')
 		vargs: vargs
 		vtmp_dir: new_vtmp_dir
+		hash: hash
 		silent_mode: _vargs.contains('-silent')
 		progress_mode: _vargs.contains('-progress')
 	}
@@ -400,7 +404,6 @@ fn worker_trunner(mut p pool.PoolProcessor, idx int, thread_id int) voidptr {
 			return pool.no_result
 		}
 	}
-	tmpd := ts.vtmp_dir
 	// tls_bench is used to format the step messages/timings
 	mut tls_bench := unsafe { &benchmark.Benchmark(p.get_thread_context(idx)) }
 	if isnil(tls_bench) {
@@ -441,13 +444,11 @@ fn worker_trunner(mut p pool.PoolProcessor, idx int, thread_id int) voidptr {
 	// Remove them after a test passes/fails.
 	fname := os.file_name(file)
 	generated_binary_fname := if os.user_os() == 'windows' && !run_js {
-		fname.replace('.v', '.exe')
-	} else if !run_js {
-		fname.replace('.v', '')
+		'${fname.all_before_last('.v')}_${ts.hash}.exe'
 	} else {
-		fname.replace('.v', '')
+		'${fname.all_before_last('.v')}_${ts.hash}'
 	}
-	generated_binary_fpath := os.join_path_single(tmpd, generated_binary_fname)
+	generated_binary_fpath := os.join_path_single(ts.vtmp_dir, generated_binary_fname)
 	if produces_file_output {
 		if ts.rm_binaries {
 			os.rm(generated_binary_fpath) or {}
@@ -455,7 +456,7 @@ fn worker_trunner(mut p pool.PoolProcessor, idx int, thread_id int) voidptr {
 
 		cmd_options << ' -o ${os.quoted_path(generated_binary_fpath)}'
 	}
-	cmd := '${os.quoted_path(ts.vexe)} ' + cmd_options.join(' ') + ' ${os.quoted_path(file)}'
+	cmd := '${os.quoted_path(ts.vexe)} ${cmd_options.join(' ')} ${os.quoted_path(file)}'
 	ts.benchmark.step()
 	tls_bench.step()
 	if relative_file.replace('\\', '/') in ts.skip_files {
@@ -712,9 +713,8 @@ pub fn building_any_v_binaries_failed() bool {
 // setup_new_vtmp_folder creates a new nested folder inside VTMP, then resets VTMP to it,
 // so that V programs/tests will write their temporary files to new location.
 // The new nested folder, and its contents, will get removed after all tests/programs succeed.
-pub fn setup_new_vtmp_folder() string {
-	now := time.sys_mono_now()
-	new_vtmp_dir := os.join_path(os.vtmp_dir(), 'tsession_${sync.thread_id().hex()}_${now}')
+pub fn setup_new_vtmp_folder(hash string) string {
+	new_vtmp_dir := os.join_path(os.vtmp_dir(), 'tsession_${hash}')
 	os.mkdir_all(new_vtmp_dir) or { panic(err) }
 	os.setenv('VTMP', new_vtmp_dir, true)
 	return new_vtmp_dir
@@ -723,7 +723,7 @@ pub fn setup_new_vtmp_folder() string {
 pub struct TestDetails {
 pub mut:
 	retry int
-	flaky bool // when flaky tests fail, the whole run is still considered successfull, unless VTEST_FAIL_FLAKY is 1
+	flaky bool // when flaky tests fail, the whole run is still considered successful, unless VTEST_FAIL_FLAKY is 1
 }
 
 pub fn get_test_details(file string) TestDetails {

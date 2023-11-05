@@ -19,7 +19,7 @@ const (
 		'vlib/builtin/float_test.v',
 		'vlib/builtin/byte_test.v',
 		'vlib/builtin/rune_test.v',
-		'vlib/builtin/builtin_test.v',
+		'vlib/builtin/builtin_test.c.v',
 		'vlib/builtin/map_of_floats_test.v',
 		'vlib/builtin/string_int_test.v',
 		'vlib/builtin/utf8_test.v',
@@ -132,11 +132,15 @@ const (
 		'vlib/orm/orm_string_interpolation_in_where_test.v',
 		'vlib/orm/orm_interface_test.v',
 		'vlib/orm/orm_mut_db_test.v',
+		'vlib/orm/orm_null_test.v',
 		'vlib/orm/orm_result_test.v',
 		'vlib/orm/orm_custom_operators_test.v',
+		'vlib/orm/orm_fk_test.v',
+		'vlib/orm/orm_references_test.v',
 		'vlib/db/sqlite/sqlite_test.v',
 		'vlib/db/sqlite/sqlite_orm_test.v',
 		'vlib/db/sqlite/sqlite_vfs_lowlevel_test.v',
+		'vlib/v/tests/orm_enum_test.v',
 		'vlib/v/tests/orm_sub_struct_test.v',
 		'vlib/v/tests/orm_sub_array_struct_test.v',
 		'vlib/v/tests/orm_joined_tables_select_test.v',
@@ -161,7 +165,9 @@ const (
 		'vlib/orm/orm_create_and_drop_test.v',
 		'vlib/orm/orm_insert_test.v',
 		'vlib/orm/orm_insert_reserved_name_test.v',
+		'vlib/orm/orm_references_test.v',
 		'vlib/v/tests/websocket_logger_interface_should_compile_test.v',
+		'vlib/v/tests/orm_enum_test.v',
 		'vlib/v/tests/orm_sub_array_struct_test.v',
 		'vlib/v/tests/orm_handle_error_for_select_from_not_created_table_test.v',
 	]
@@ -170,6 +176,8 @@ const (
 		'vlib/orm/orm_create_and_drop_test.v',
 		'vlib/orm/orm_insert_test.v',
 		'vlib/orm/orm_insert_reserved_name_test.v',
+		'vlib/orm/orm_references_test.v',
+		'vlib/v/tests/orm_enum_test.v',
 		'vlib/v/tests/orm_sub_array_struct_test.v',
 		'vlib/v/tests/orm_handle_error_for_select_from_not_created_table_test.v',
 		'vlib/v/tests/project_with_cpp_code/compiling_cpp_files_with_a_cplusplus_compiler_test.v', // fails compilation with: undefined reference to vtable for __cxxabiv1::__function_type_info'
@@ -207,12 +215,16 @@ const (
 		'vlib/orm/orm_insert_test.v',
 		'vlib/orm/orm_insert_reserved_name_test.v',
 		'vlib/orm/orm_fn_calls_test.v',
+		'vlib/orm/orm_null_test.v',
 		'vlib/orm/orm_last_id_test.v',
 		'vlib/orm/orm_string_interpolation_in_where_test.v',
 		'vlib/orm/orm_interface_test.v',
 		'vlib/orm/orm_mut_db_test.v',
 		'vlib/orm/orm_result_test.v',
 		'vlib/orm/orm_custom_operators_test.v',
+		'vlib/orm/orm_fk_test.v',
+		'vlib/orm/orm_references_test.v',
+		'vlib/v/tests/orm_enum_test.v',
 		'vlib/v/tests/orm_sub_struct_test.v',
 		'vlib/v/tests/orm_sub_array_struct_test.v',
 		'vlib/v/tests/orm_joined_tables_select_test.v',
@@ -245,7 +257,8 @@ const (
 		'do_not_remove',
 		'vlib/v/tests/const_fixed_array_containing_references_to_itself_test.v', // error C2099: initializer is not a constant
 		'vlib/v/tests/const_and_global_with_same_name_test.v', // error C2099: initializer is not a constant
-		'vlib/v/tests/sumtype_as_cast_test.v', // error: cannot support compound statement expression ({expr; expr; expr;})
+		'vlib/v/tests/sumtype_as_cast_1_test.v', // error: cannot support compound statement expression ({expr; expr; expr;})
+		'vlib/v/tests/sumtype_as_cast_2_test.v', // error: cannot support compound statement expression ({expr; expr; expr;})
 		'vlib/v/tests/project_with_cpp_code/compiling_cpp_files_with_a_cplusplus_compiler_test.v', // TODO
 	]
 	skip_on_windows               = [
@@ -337,11 +350,10 @@ fn main() {
 		tsession.skip_files << 'vlib/db/pg/pg_orm_test.v'
 	}
 
-	if github_job == 'windows-tcc' {
-		tsession.skip_files << 'vlib/v/tests/project_with_cpp_code/compiling_cpp_files_with_a_cplusplus_compiler_test.v'
-		// TODO: fix these ASAP
-		tsession.skip_files << 'vlib/net/tcp_test.v'
-		tsession.skip_files << 'vlib/net/udp_test.v'
+	$if windows {
+		if github_job == 'tcc' {
+			tsession.skip_files << 'vlib/v/tests/project_with_cpp_code/compiling_cpp_files_with_a_cplusplus_compiler_test.v'
+		}
 	}
 
 	if !os.exists('cmd/tools/builders/wasm_builder') {

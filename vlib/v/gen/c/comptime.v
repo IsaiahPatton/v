@@ -501,10 +501,9 @@ fn (mut g Gen) comptime_if_cond(cond ast.Expr, pkg_exist bool) (bool, bool) {
 					return if cond.op == .and { l && r } else { l || r }, d1 && d1 == d2
 				}
 				.key_is, .not_is {
-					left := cond.left
-					if left in [ast.TypeNode, ast.Ident, ast.SelectorExpr]
+					if cond.left in [ast.TypeNode, ast.Ident, ast.SelectorExpr]
 						&& cond.right in [ast.ComptimeType, ast.TypeNode] {
-						exp_type := g.get_expr_type(left)
+						exp_type := g.get_expr_type(cond.left)
 						if cond.right is ast.ComptimeType {
 							is_true := g.table.is_comptime_type(exp_type, cond.right)
 							if cond.op == .key_is {
@@ -652,28 +651,24 @@ fn (mut g Gen) comptime_if_cond(cond ast.Expr, pkg_exist bool) (bool, bool) {
 					}
 				}
 				.gt, .lt, .ge, .le {
-					if cond.left is ast.SelectorExpr && cond.right is ast.IntegerLiteral {
-						if g.is_comptime_selector_field_name(cond.left as ast.SelectorExpr,
-							'indirections')
-						{
-							is_true := match cond.op {
-								.gt { g.comptime_for_field_type.nr_muls() > cond.right.val.i64() }
-								.lt { g.comptime_for_field_type.nr_muls() < cond.right.val.i64() }
-								.ge { g.comptime_for_field_type.nr_muls() >= cond.right.val.i64() }
-								.le { g.comptime_for_field_type.nr_muls() <= cond.right.val.i64() }
-								else { false }
-							}
-							if is_true {
-								g.write('1')
-							} else {
-								g.write('0')
-							}
-							return is_true, true
-						} else {
-							return true, false
+					if cond.left is ast.SelectorExpr && cond.right is ast.IntegerLiteral
+						&& g.is_comptime_selector_field_name(cond.left, 'indirections') {
+						is_true := match cond.op {
+							.gt { g.comptime_for_field_type.nr_muls() > cond.right.val.i64() }
+							.lt { g.comptime_for_field_type.nr_muls() < cond.right.val.i64() }
+							.ge { g.comptime_for_field_type.nr_muls() >= cond.right.val.i64() }
+							.le { g.comptime_for_field_type.nr_muls() <= cond.right.val.i64() }
+							else { false }
 						}
+						if is_true {
+							g.write('1')
+						} else {
+							g.write('0')
+						}
+						return is_true, true
+					} else {
+						return true, false
 					}
-					return true, false
 				}
 				else {
 					return true, false
@@ -795,7 +790,7 @@ fn (mut g Gen) get_comptime_var_type(node ast.Expr) ast.Type {
 fn (mut g Gen) resolve_comptime_type(node ast.Expr, default_type ast.Type) ast.Type {
 	if (node is ast.Ident && g.is_comptime_var(node)) || node is ast.ComptimeSelector {
 		return g.get_comptime_var_type(node)
-	} else if node is ast.SelectorExpr {
+	} else if node is ast.SelectorExpr && node.expr_type != 0 {
 		sym := g.table.sym(g.unwrap_generic(node.expr_type))
 		if f := g.table.find_field_with_embeds(sym, node.field_name) {
 			return f.typ
@@ -1042,6 +1037,9 @@ fn (mut g Gen) comptime_if_to_ifdef(name string, is_comptime_option bool) !strin
 		'serenity' {
 			return '__serenity__'
 		}
+		'plan9' {
+			return '__plan9__'
+		}
 		'vinix' {
 			return '__vinix__'
 		}
@@ -1079,6 +1077,9 @@ fn (mut g Gen) comptime_if_to_ifdef(name string, is_comptime_option bool) !strin
 		}
 		'wasm32_emscripten' {
 			return '__EMSCRIPTEN__'
+		}
+		'native' {
+			return '_VNATIVE' // when using the native backend, cgen is inactive
 		}
 		// compilers:
 		'gcc' {

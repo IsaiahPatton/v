@@ -42,7 +42,7 @@ fn (mut c Checker) struct_decl(mut node ast.StructDecl) {
 				}
 			}
 		}
-		if struct_sym.info.is_minify {
+		if struct_sym.info.is_minify && !c.pref.output_cross_c {
 			node.fields.sort_with_compare(minify_sort_fn)
 			struct_sym.info.fields.sort_with_compare(minify_sort_fn)
 		}
@@ -131,30 +131,37 @@ fn (mut c Checker) struct_decl(mut node ast.StructDecl) {
 					}
 				}
 			}
-			if sym.kind == .struct_ {
-				info := sym.info as ast.Struct
-				if info.is_heap && !field.typ.is_ptr() {
-					struct_sym.info.is_heap = true
-				}
-				for ct in info.concrete_types {
-					ct_sym := c.table.sym(ct)
-					if ct_sym.kind == .placeholder {
-						c.error('unknown type `${ct_sym.name}`', field.type_pos)
+			match sym.kind {
+				.struct_ {
+					info := sym.info as ast.Struct
+					if info.is_heap && !field.typ.is_ptr() {
+						struct_sym.info.is_heap = true
+					}
+					for ct in info.concrete_types {
+						ct_sym := c.table.sym(ct)
+						if ct_sym.kind == .placeholder {
+							c.error('unknown type `${ct_sym.name}`', field.type_pos)
+						}
 					}
 				}
-			}
-			if sym.kind == .multi_return {
-				c.error('cannot use multi return as field type', field.type_pos)
-			}
-
-			if sym.kind == .none_ {
-				c.error('cannot use `none` as field type', field.type_pos)
-			}
-			if sym.kind == .map {
-				info := sym.map_info()
-				if info.value_type.has_flag(.result) {
-					c.error('cannot use Result type as map value type', field.type_pos)
+				.multi_return {
+					c.error('cannot use multi return as field type', field.type_pos)
 				}
+				.none_ {
+					c.error('cannot use `none` as field type', field.type_pos)
+				}
+				.map {
+					info := sym.map_info()
+					if info.value_type.has_flag(.result) {
+						c.error('cannot use Result type as map value type', field.type_pos)
+					}
+				}
+				.alias {
+					if sym.name == 'byte' {
+						c.warn('byte is deprecated, use u8 instead', field.type_pos)
+					}
+				}
+				else {}
 			}
 
 			if field.has_default_expr {
@@ -208,7 +215,6 @@ fn (mut c Checker) struct_decl(mut node ast.StructDecl) {
 						}
 					}
 				}
-
 				if field.typ.has_flag(.option) {
 					if field.default_expr is ast.None {
 						c.warn('unnecessary default value of `none`: struct fields are zeroed by default',
@@ -566,9 +572,14 @@ fn (mut c Checker) struct_init(mut node ast.StructInit, is_field_zero_struct_ini
 							init_field.pos)
 					}
 				}
+				if exp_type.has_flag(.option) && got_type.is_ptr() && !(exp_type.is_ptr()
+					&& exp_type_sym.kind == .struct_) {
+					c.error('cannot assign a pointer to option struct field', init_field.pos)
+				}
 				if exp_type_sym.kind == .voidptr && got_type_sym.kind == .struct_
 					&& !got_type.is_ptr() {
-					c.error('allocate on the heap for use in other functions', init_field.pos)
+					c.error('allocate `${got_type_sym.name}` on the heap for use in other functions',
+						init_field.pos)
 				}
 				if exp_type_sym.kind == .array && got_type_sym.kind == .array {
 					if init_field.expr is ast.IndexExpr
@@ -712,7 +723,7 @@ or use an explicit `unsafe{ a[..] }`, if you do not want a copy of the slice.',
 				if field.typ.is_ptr() && !field.typ.has_flag(.shared_f)
 					&& !field.typ.has_flag(.option) && !node.has_update_expr && !c.pref.translated
 					&& !c.file.is_translated {
-					c.warn('reference field `${type_sym.name}.${field.name}` must be initialized',
+					c.error('reference field `${type_sym.name}.${field.name}` must be initialized',
 						node.pos)
 					continue
 				}
@@ -836,7 +847,7 @@ fn (mut c Checker) check_ref_fields_initialized(struct_sym &ast.TypeSymbol, mut 
 		}
 		if field.typ.is_ptr() && !field.typ.has_flag(.shared_f) && !field.typ.has_flag(.option)
 			&& !field.has_default_expr {
-			c.warn('reference field `${linked_name}.${field.name}` must be initialized (part of struct `${struct_sym.name}`)',
+			c.error('reference field `${linked_name}.${field.name}` must be initialized (part of struct `${struct_sym.name}`)',
 				node.pos)
 			continue
 		}

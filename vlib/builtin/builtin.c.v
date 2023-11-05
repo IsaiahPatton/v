@@ -32,10 +32,6 @@ pub fn exit(code int) {
 	C.exit(code)
 }
 
-fn vcommithash() string {
-	return unsafe { tos5(&char(C.V_CURRENT_COMMIT_HASH)) }
-}
-
 // panic_debug private function that V uses for panics, -cg/-g is passed
 // recent versions of tcc print nicer backtraces automatically
 // Note: the duplication here is because tcc_backtrace should be called directly
@@ -54,9 +50,11 @@ fn panic_debug(line_no int, file string, mod string, fn_name string, s string) {
 		eprintln(' function: ${fn_name}()')
 		eprintln('  message: ${s}')
 		eprintln('     file: ${file}:${line_no}')
-		eprintln('   v hash: ${vcommithash()}')
+		eprintln('   v hash: ${@VCURRENTHASH}')
 		eprintln('=========================================')
-		$if exit_after_panic_message ? {
+		$if native {
+			C.exit(1) // TODO: native backtraces
+		} $else $if exit_after_panic_message ? {
 			C.exit(1)
 		} $else $if no_backtrace ? {
 			C.exit(1)
@@ -106,8 +104,10 @@ pub fn panic(s string) {
 	} $else {
 		eprint('V panic: ')
 		eprintln(s)
-		eprintln('v hash: ${vcommithash()}')
-		$if exit_after_panic_message ? {
+		eprintln('v hash: ${@VCURRENTHASH}')
+		$if native {
+			C.exit(1) // TODO: native backtraces
+		} $else $if exit_after_panic_message ? {
 			C.exit(1)
 		} $else $if no_backtrace ? {
 			C.exit(1)
@@ -262,7 +262,7 @@ pub fn println(s string) {
 
 [manualfree]
 fn _writeln_to_fd(fd int, s string) {
-	$if !bultin_writeln_should_write_at_once ? {
+	$if !builtin_writeln_should_write_at_once ? {
 		lf := u8(`\n`)
 		_write_buf_to_fd(fd, s.str, s.len)
 		_write_buf_to_fd(fd, &lf, 1)
@@ -288,7 +288,7 @@ fn _write_buf_to_fd(fd int, buf &u8, buf_len int) {
 	mut ptr := unsafe { buf }
 	mut remaining_bytes := isize(buf_len)
 	mut x := isize(0)
-	$if freestanding || vinix || bultin_write_buf_to_fd_should_use_c_write ? {
+	$if freestanding || vinix || builtin_write_buf_to_fd_should_use_c_write ? {
 		unsafe {
 			for remaining_bytes > 0 {
 				x = C.write(fd, ptr, remaining_bytes)
@@ -603,8 +603,9 @@ pub fn free(ptr voidptr) {
 // memdup dynamically allocates a `sz` bytes block of memory on the heap
 // memdup then copies the contents of `src` into the allocated space and
 // returns a pointer to the newly allocated space.
+
 [unsafe]
-pub fn memdup(src voidptr, sz int) voidptr {
+pub fn memdup(src voidptr, sz isize) voidptr {
 	$if trace_memdup ? {
 		C.fprintf(C.stderr, c'memdup size: %10d\n', sz)
 	}
@@ -618,7 +619,7 @@ pub fn memdup(src voidptr, sz int) voidptr {
 }
 
 [unsafe]
-pub fn memdup_noscan(src voidptr, sz int) voidptr {
+pub fn memdup_noscan(src voidptr, sz isize) voidptr {
 	$if trace_memdup ? {
 		C.fprintf(C.stderr, c'memdup_noscan size: %10d\n', sz)
 	}
@@ -636,7 +637,7 @@ pub fn memdup_noscan(src voidptr, sz int) voidptr {
 // memdup_uncollectable then copies the contents of `src` into the allocated
 // space and returns a pointer to the newly allocated space.
 [unsafe]
-pub fn memdup_uncollectable(src voidptr, sz int) voidptr {
+pub fn memdup_uncollectable(src voidptr, sz isize) voidptr {
 	$if trace_memdup ? {
 		C.fprintf(C.stderr, c'memdup_uncollectable size: %10d\n', sz)
 	}
@@ -688,31 +689,6 @@ fn v_fixed_index(i int, len int) int {
 		}
 	}
 	return i
-}
-
-// print_backtrace shows a backtrace of the current call stack on stdout
-pub fn print_backtrace() {
-	// At the time of backtrace_symbols_fd call, the C stack would look something like this:
-	// * print_backtrace_skipping_top_frames
-	// * print_backtrace itself
-	// * the rest of the backtrace frames
-	// => top 2 frames should be skipped, since they will not be informative to the developer
-	$if !no_backtrace ? {
-		$if freestanding {
-			println(bare_backtrace())
-		} $else {
-			$if tinyc {
-				C.tcc_backtrace(c'Backtrace')
-			} $else {
-				// NOTE: TCC doesn't have the unwind library
-				$if use_libbacktrace ? {
-					print_libbacktrace(1)
-				} $else {
-					print_backtrace_skipping_top_frames(2)
-				}
-			}
-		}
-	}
 }
 
 // NOTE: g_main_argc and g_main_argv are filled in right after C's main start.

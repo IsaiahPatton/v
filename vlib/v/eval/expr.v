@@ -85,10 +85,10 @@ pub fn (mut e Eval) expr(expr ast.Expr, expecting ast.Type) Object {
 						// 		// }
 						// 	}
 						// 	// println((e.local_vars['s'].val as string).str == voidptr_args[1])
-						// 	println('helo?$voidptr_args')
+						// 	println('hello?$voidptr_args')
 						// 	// println((byteptr(voidptr_args[1])[0]))
 						// 	x := strconv.v_sprintf(args[0] as string, ...voidptr_args)
-						// 	// println('helo!')
+						// 	// println('hello!')
 						// 	// println(x.len)
 						// 	y := C.write(1, x.str, x.len)
 						// 	println('aft')
@@ -452,22 +452,22 @@ pub fn (mut e Eval) expr(expr ast.Expr, expecting ast.Type) Object {
 			e.error(exp.str())
 		}
 		ast.ArrayInit {
-			if expr.has_len || expr.has_cap || expr.has_default {
-				if expr.has_len && !expr.has_cap && expr.has_default {
+			if expr.has_len || expr.has_cap || expr.has_init {
+				if expr.has_len && !expr.has_cap && expr.has_init {
 					return Array{
-						val: []Object{len: int((e.expr(expr.len_expr, 7) as Int).val), init: e.expr(expr.default_expr,
+						val: []Object{len: int((e.expr(expr.len_expr, 7) as Int).val), init: e.expr(expr.init_expr,
 							expr.elem_type)}
 					}
-				} else if !expr.has_len && expr.has_cap && !expr.has_default {
+				} else if !expr.has_len && expr.has_cap && !expr.has_init {
 					return Array{
 						val: []Object{cap: int((e.expr(expr.cap_expr, 7) as Int).val)}
 					}
-				} else if !expr.has_len && !expr.has_cap && !expr.has_default {
+				} else if !expr.has_len && !expr.has_cap && !expr.has_init {
 					return Array{
 						val: []Object{}
 					}
 				} else {
-					e.error('unknown array init combination; len: ${expr.has_len}, cap: ${expr.has_cap}, init: ${expr.has_default}')
+					e.error('unknown array init combination; len: ${expr.has_len}, cap: ${expr.has_cap}, init: ${expr.has_init}')
 				}
 			}
 			if expr.is_fixed || expr.has_val {
@@ -574,7 +574,7 @@ pub fn (mut e Eval) expr(expr ast.Expr, expecting ast.Type) Object {
 		ast.ConcatExpr, ast.DumpExpr, ast.EmptyExpr, ast.EnumVal, ast.GoExpr, ast.SpawnExpr,
 		ast.IfGuardExpr, ast.IsRefType, ast.Likely, ast.LockExpr, ast.MapInit, ast.MatchExpr,
 		ast.Nil, ast.NodeError, ast.None, ast.OffsetOf, ast.OrExpr, ast.RangeExpr, ast.SelectExpr,
-		ast.SqlExpr, ast.TypeNode, ast.TypeOf {
+		ast.SqlExpr, ast.TypeNode, ast.TypeOf, ast.LambdaExpr {
 			e.error('unhandled expression ${typeof(expr).name}')
 		}
 	}

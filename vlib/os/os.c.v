@@ -335,7 +335,7 @@ pub fn fileno(cfile voidptr) int {
 	$if windows {
 		return C._fileno(cfile)
 	} $else {
-		mut cfile_casted := &C.FILE(0) // FILE* cfile_casted = 0;
+		mut cfile_casted := &C.FILE(unsafe { nil }) // FILE* cfile_casted = 0;
 		cfile_casted = cfile
 		// Required on FreeBSD/OpenBSD/NetBSD as stdio.h defines fileno(..) with a macro
 		// that performs a field access on its argument without casting from void*.
@@ -429,10 +429,11 @@ pub fn system(cmd string) int {
 	}
 	$if !windows {
 		pret, is_signaled := posix_wait4_to_exit_status(ret)
-		if is_signaled {
-			println('Terminated by signal ${ret:2d} (' + sigint_to_signal_name(pret) + ')')
-		}
 		ret = pret
+		if is_signaled {
+			eprintln('Terminated by signal ${pret:2d} (' + sigint_to_signal_name(pret) + ')')
+			ret = pret + 128
+		}
 	}
 	return ret
 }
@@ -541,7 +542,7 @@ pub fn rmdir(path string) ! {
 fn print_c_errno() {
 	e := C.errno
 	se := unsafe { tos_clone(&u8(C.strerror(e))) }
-	println('errno=${e} err=${se}')
+	eprintln('errno=${e} err=${se}')
 }
 
 // get_raw_line returns a one-line string from stdin along with '\n' if there is any.
@@ -553,7 +554,8 @@ pub fn get_raw_line() string {
 			h_input := C.GetStdHandle(C.STD_INPUT_HANDLE)
 			mut bytes_read := u32(0)
 			if is_atty(0) > 0 {
-				x := C.ReadConsole(h_input, buf, max_line_chars * 2, &bytes_read, 0)
+				x := C.ReadConsole(h_input, buf, max_line_chars * 2, voidptr(&bytes_read),
+					0)
 				if !x {
 					return tos(buf, 0)
 				}
@@ -562,7 +564,7 @@ pub fn get_raw_line() string {
 			mut offset := 0
 			for {
 				pos := buf + offset
-				res := C.ReadFile(h_input, pos, 1, &u32(&bytes_read), 0)
+				res := C.ReadFile(h_input, pos, 1, voidptr(&bytes_read), 0)
 				if !res && offset == 0 {
 					return tos(buf, 0)
 				}
@@ -604,7 +606,7 @@ pub fn get_raw_stdin() []u8 {
 			mut offset := 0
 			for {
 				pos := buf + offset
-				res := C.ReadFile(h_input, pos, block_bytes, &u32(&bytes_read), 0)
+				res := C.ReadFile(h_input, pos, block_bytes, voidptr(&bytes_read), 0)
 				offset += bytes_read
 				if !res {
 					break
@@ -1009,7 +1011,7 @@ pub fn chown(path string, owner int, group int) ! {
 }
 
 // open_append tries to open a file from a given path.
-// If successfull, it and returns a `File` for appending.
+// If successful, it and returns a `File` for appending.
 pub fn open_append(path string) !File {
 	mut file := File{}
 	$if windows {
@@ -1034,7 +1036,7 @@ pub fn open_append(path string) !File {
 // execvp - loads and executes a new child process, *in place* of the current process.
 // The child process executable is located in `cmdpath`.
 // The arguments, that will be passed to it are in `args`.
-// Note: this function will NOT return when successfull, since
+// Note: this function will NOT return when successful, since
 // the child process will take control over execution.
 pub fn execvp(cmdpath string, cmdargs []string) ! {
 	mut cargs := []&char{}
@@ -1061,7 +1063,7 @@ pub fn execvp(cmdpath string, cmdargs []string) ! {
 // The child process executable is located in `cmdpath`.
 // The arguments, that will be passed to it are in `args`.
 // You can pass environment variables to through `envs`.
-// Note: this function will NOT return when successfull, since
+// Note: this function will NOT return when successful, since
 // the child process will take control over execution.
 pub fn execve(cmdpath string, cmdargs []string, envs []string) ! {
 	mut cargv := []&char{}

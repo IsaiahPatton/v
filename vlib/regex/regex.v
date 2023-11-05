@@ -1004,7 +1004,7 @@ fn (mut re RE) impl_compile(in_txt string) (int, int) {
 			// manage negation groups
 			if negate_flag == true {
 				re.prog[pc].group_neg = true
-				re.prog[pc].rep_min = 0 // may be not catched, but it is ok
+				re.prog[pc].rep_min = 0 // may not be caught, but it is ok
 			}
 
 			// set the group id
@@ -1674,7 +1674,7 @@ fn (mut re RE) group_continuous_save(g_index int) {
 *
 ******************************************************************************/
 enum Match_state {
-	start = 0
+	start        = 0
 	stop
 	end
 	new_line

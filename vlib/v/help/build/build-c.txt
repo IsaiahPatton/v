@@ -109,11 +109,13 @@ see also `v help build`.
          The module declaration should be `builtin`. The default Linux
          implementation can be found in `vlib/builtin/linux_bare`.
 
+   -cross
+      With `-cross`, V will attempt to output cross-platform C code.
+
    -os <os>, -target-os <os>
       Change the target OS that V tries to compile for.
       By default, the target OS is the host system.
-      When OS is `cross`, V will attempt to output cross-platform C code.
-
+	  
       Here is a list of the operating systems, supported by V:
       (CI tests runs on every commit/PR for each of these):
             `windows`, `linux`, `macos`
@@ -125,6 +127,7 @@ see also `v help build`.
             `android`, `termux`,
             `freebsd`, `openbsd`, `netbsd`, `dragonfly`,
             `solaris`, `serenity`, `haiku`,
+            `plan9`,
             `wasm32`, `wasm32-wasi`, `wasm32-emscripten`
 
       Note that V has the concept of platform files, i.e. files ending
@@ -141,7 +144,7 @@ see also `v help build`.
       If you compile with `-os freebsd`, then x_default.c.v will be used.
       If you compile with `-os linux`, then x_linux.c.v will be used.
       If you compile with `-os windows`, then x_windows.c.v will be used.
-      If you compile with `-os cross`, then all, *except x_default.c.v*
+      If you compile with `-cross`, then all, *except x_default.c.v*
       will be used, wrapped in conditional compilation guards, so that
       the generated C source code will be larger, but will compile on all
       explicitly supported platforms without source changes.
@@ -153,6 +156,11 @@ see also `v help build`.
       VCROSS_COMPILER_NAME, in order to override the default cross compiler,
       that V will use (`x86_64-w64-mingw32-gcc` for targeting Windows, and
       `clang` for targeting Linux from other operating systems).
+
+   -macosx-version-min 10.7
+      Only relevant on macos. It will be passed as -mmacosx-version-min=10.7 to
+      the C backend compiler clang . It is 10.7 on macos by default. If you
+      pass `-macosx-version-min 0`, then that flag will not be passed at all.
 
    -sanitize
       Pass flags related to sanitization to the C compiler.
@@ -277,6 +285,17 @@ see also `v help build`.
       Write all used V file paths used by the program in `file.txt`, one module per line.
       If `file.txt` is `-`, write to stdout instead.
 
+   -dump-defines file.txt
+      Write all system and user defines, that V knows about for the current program, one per line.
+      If `file.txt` is `-`, write to stdout instead.
+      Example sample of the content of that file:
+          system,linux,eval
+          system,amd64,eval
+          system,solaris,skip		  
+          system,solaris,skip		  
+          user,gcboehm,eval
+          user,gg_record_trace,skip
+
    -no-rsp
       By default, V passes all C compiler options to the backend C compiler
       in so called "response files" (https://gcc.gnu.org/wiki/Response_Files).
@@ -325,4 +344,4 @@ see also `v help build`.
           https://learn.microsoft.com/en-us/cpp/build/reference/fp-specify-floating-point-behavior?view=msvc-170&redirectedfrom=MSDN
           https://clang.llvm.org/docs/UsersManual.html#cmdoption-ffast-math
           https://gcc.gnu.org/onlinedocs/gcc/Optimize-Options.html#index-ffast-math
-   
+

@@ -221,9 +221,24 @@ const div_mod_test_data = [
 ]
 // vfmt on
 
+struct DivTest {
+	dividend TestInteger
+	divisor  TestInteger
+	quotient TestInteger
+}
+
+// vfmt off
+const div_test_data = [
+	DivTest{1234, 10, 123},
+	DivTest{-1234, 10, -123},
+	DivTest{1234, -10, -123},
+	DivTest{-1234, -10, 123},
+]
+// vfmt on
+
 enum Comparison {
-	less = -1
-	equal = 0
+	less    = -1
+	equal   = 0
 	greater = 1
 }
 
@@ -552,6 +567,9 @@ fn test_mul() {
 
 fn test_div() {
 	for t in div_mod_test_data {
+		assert t.dividend.parse() / t.divisor.parse() == t.quotient.parse()
+	}
+	for t in div_test_data {
 		assert t.dividend.parse() / t.divisor.parse() == t.quotient.parse()
 	}
 }

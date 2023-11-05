@@ -24,17 +24,17 @@ enum TokenKind {
 	eof
 	comma = 44 // ,
 	colon = 58 // :
-	lsbr = 91 // [
-	rsbr = 93 // ]
-	lcbr = 123 // {
-	rcbr = 125 // }
+	lsbr  = 91 // [
+	rsbr  = 93 // ]
+	lcbr  = 123 // {
+	rcbr  = 125 // }
 }
 
 pub struct Token {
 	lit  []u8      // literal representation of the token
 	kind TokenKind // the token number/enum; for quick comparisons
-	line int       // the line in the source where the token occured
-	col  int       // the column in the source where the token occured
+	line int       // the line in the source where the token occurred
+	col  int       // the column in the source where the token occurred
 }
 
 // full_col returns the full column information which includes the length

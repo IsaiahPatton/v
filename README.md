@@ -14,7 +14,7 @@
 [![Sponsor][SponsorBadge]][SponsorUrl]
 [![Patreon][PatreonBadge]][PatreonUrl]
 [![Discord][DiscordBadge]][DiscordUrl]
-[![Twitter][TwitterBadge]][TwitterUrl]
+[![X][XBadge]][XUrl]
 [![Modules][ModulesBadge]][ModulesUrl]
 </div>
 
@@ -41,21 +41,23 @@
 - C and JavaScript backends
 - Great for writing low-level software ([Vinix OS](https://github.com/vlang/vinix))
 
-## Stability guarantee and future changes
+## Stability, future changes, post 1.0 freeze
 
-Despite being at an early development stage, the V language is relatively stable and has
-backwards compatibility guarantee, meaning that the code you write today is guaranteed
-to work a month, a year, or five years from now.
+Despite being at an early development stage, the V language is relatively stable, and doesn't
+change often. But there will be changes before 1.0.
+Most changes in the syntax are handled via vfmt automatically.
 
-There still may be minor syntax changes before the 1.0 release, but they will be handled
-automatically via `vfmt`, as has been done in the past.
-
-The V core APIs (primarily the `os` module) will still have minor changes until
-they are stabilized in V 1.0. Of course the APIs will grow after that, but without breaking
+The V core APIs (primarily the `os` module) will also have minor changes until
+they are stabilized in V 1.0. Of course, the APIs will grow after that, but without breaking
 existing code.
 
-Unlike many other languages, V is not going to be always changing, with new features
-being introduced and old features modified. It is always going to be a small and simple
+After the 1.0 release V is going to be in the "feature freeze" mode. That means no breaking changes
+in the language, only bug fixes and performance improvements. Similar to Go.
+
+Will there be V 2.0? Not within a decade after 1.0, perhaps not ever.
+
+To sum it up, unlike many other languages, V is not going to be always changing, with new features
+introduced and old features modified. It is always going to be a small and simple
 language, very similar to the way it is right now.
 
 ## Installing V from source
@@ -365,12 +367,12 @@ section on our
 [DiscordBadge]: https://img.shields.io/discord/592103645835821068?label=Discord&logo=discord&logoColor=white
 [PatreonBadge]: https://img.shields.io/endpoint.svg?url=https%3A%2F%2Fshieldsio-patreon.vercel.app%2Fapi%3Fusername%3Dvlang%26type%3Dpatrons&style=flat
 [SponsorBadge]: https://camo.githubusercontent.com/da8bc40db5ed31e4b12660245535b5db67aa03ce/68747470733a2f2f696d672e736869656c64732e696f2f7374617469632f76313f6c6162656c3d53706f6e736f72266d6573736167653d254532253944254134266c6f676f3d476974487562
-[TwitterBadge]: https://img.shields.io/badge/follow-%40v_language-1DA1F2?logo=twitter&style=flat&logoColor=white&color=1da1f2
+[XBadge]: https://img.shields.io/badge/follow-%40v_language-1DA1F2?logo=x&style=flat&logoColor=white&color=1da1f2
 [ModulesBadge]: https://img.shields.io/badge/modules-reference-027d9c?logo=v&logoColor=white&logoWidth=10
 
 [WorkflowUrl]: https://github.com/vlang/v/commits/master
 [DiscordUrl]: https://discord.gg/vlang
 [PatreonUrl]: https://patreon.com/vlang
 [SponsorUrl]: https://github.com/sponsors/medvednikov
-[TwitterUrl]: https://twitter.com/v_language
+[XUrl]: https://x.com/v_language
 [ModulesUrl]: https://modules.vlang.io

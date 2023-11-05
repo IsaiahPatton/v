@@ -5,7 +5,6 @@ import v.ast
 import v.token
 import v.pref
 import v.util
-import v.util.version
 import v.depgraph
 import encoding.base64
 import v.gen.js.sourcemap
@@ -247,7 +246,7 @@ pub fn gen(files []&ast.File, table &ast.Table, pref_ &pref.Preferences) string 
 	// deps_resolved := graph.resolve()
 	// nodes := deps_resolved.nodes
 
-	mut out := g.definitions.str() + g.hashes()
+	mut out := g.definitions.str()
 	if !g.pref.output_es5 {
 		out += '\nlet wasmExportObject;\n'
 
@@ -489,12 +488,6 @@ pub fn (mut g JsGen) init() {
 	g.definitions.writeln('function BreakException() {}')
 	g.definitions.writeln('function ContinueException() {}')
 	g.definitions.writeln('function ReturnException(val) { this.val = val; }')
-}
-
-pub fn (g JsGen) hashes() string {
-	mut res := '// V_COMMIT_HASH ${version.vhash()}\n'
-	res += '// V_CURRENT_COMMIT_HASH ${version.githash(g.pref.building_v)}\n'
-	return res
 }
 
 [noreturn]
@@ -739,6 +732,9 @@ fn (mut g JsGen) stmt_no_semi(node_ ast.Stmt) {
 			}
 			g.gen_return_stmt(node)
 		}
+		ast.SemicolonStmt {
+			g.writeln(';')
+		}
 		ast.SqlStmt {}
 		ast.StructDecl {
 			g.write_v_source_line_info(node.pos)
@@ -841,6 +837,9 @@ fn (mut g JsGen) stmt(node_ ast.Stmt) {
 				g.gen_defer_stmts()
 			}
 			g.gen_return_stmt(node)
+		}
+		ast.SemicolonStmt {
+			g.writeln(';')
 		}
 		ast.SqlStmt {}
 		ast.StructDecl {
@@ -955,6 +954,9 @@ fn (mut g JsGen) expr(node_ ast.Expr) {
 		}
 		ast.IntegerLiteral {
 			g.gen_integer_literal_expr(node)
+		}
+		ast.LambdaExpr {
+			eprintln('> TODO: implement short lambda expressions in the JS backend')
 		}
 		ast.Likely {
 			g.write('(')
@@ -2120,8 +2122,8 @@ fn (mut g JsGen) gen_array_init_expr(it ast.ArrayInit) {
 		g.writeln('; it++) {')
 		g.inc_indent()
 		g.write('${t1}.push(')
-		if it.has_default {
-			g.expr(it.default_expr)
+		if it.has_init {
+			g.expr(it.init_expr)
 		} else {
 			// Fill the array with the default values for its type
 			t := g.to_js_typ_val(it.elem_type)
@@ -2152,8 +2154,8 @@ fn (mut g JsGen) gen_array_init_expr(it ast.ArrayInit) {
 		g.writeln('; ${t2}++) {')
 		g.inc_indent()
 		g.write('${t1}.push(')
-		if it.has_default {
-			g.expr(it.default_expr)
+		if it.has_init {
+			g.expr(it.init_expr)
 		} else {
 			// Fill the array with the default values for its type
 			t := g.to_js_typ_val(it.elem_type)
@@ -3505,7 +3507,7 @@ fn (mut g JsGen) gen_typeof_expr(it ast.TypeOf) {
 }
 
 fn (mut g JsGen) gen_cast_tmp(tmp string, typ_ ast.Type) {
-	// Skip cast if type is the same as the parrent caster
+	// Skip cast if type is the same as the parent caster
 	tsym := g.table.final_sym(typ_)
 	if !g.pref.output_es5 && (tsym.kind == .i64 || tsym.kind == .u64) {
 		g.write('new ')
@@ -3584,7 +3586,7 @@ fn (mut g JsGen) gen_type_cast_expr(it ast.CastExpr) {
 		return
 	}
 
-	// Skip cast if type is the same as the parrent caster
+	// Skip cast if type is the same as the parent caster
 	tsym := to_type_sym
 	if tsym.kind == .sum_type {
 		g.expr(it.expr)
@@ -3649,7 +3651,7 @@ fn (mut g JsGen) gen_integer_literal_expr(it ast.IntegerLiteral) {
 		}
 	}
 
-	// Skip cast if type is the same as the parrent caster
+	// Skip cast if type is the same as the parent caster
 	if g.cast_stack.len > 0 {
 		if g.cast_stack.last() in ast.integer_type_idxs {
 			g.write('new ')
@@ -3686,7 +3688,7 @@ fn (mut g JsGen) gen_float_literal_expr(it ast.FloatLiteral) {
 		}
 	}
 
-	// Skip cast if type is the same as the parrent caster
+	// Skip cast if type is the same as the parent caster
 	if g.cast_stack.len > 0 {
 		if g.cast_stack.last() in ast.float_type_idxs {
 			g.write('new f32(${it.val})')

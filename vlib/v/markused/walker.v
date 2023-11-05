@@ -192,6 +192,7 @@ pub fn (mut w Walker) stmt(node_ ast.Stmt) {
 		ast.HashStmt {}
 		ast.Import {}
 		ast.InterfaceDecl {}
+		ast.SemicolonStmt {}
 		ast.Module {}
 		ast.TypeDecl {}
 		ast.NodeError {}
@@ -236,7 +237,7 @@ fn (mut w Walker) expr(node_ ast.Expr) {
 		ast.ArrayInit {
 			w.expr(node.len_expr)
 			w.expr(node.cap_expr)
-			w.expr(node.default_expr)
+			w.expr(node.init_expr)
 			w.exprs(node.exprs)
 		}
 		ast.Assoc {
@@ -347,6 +348,9 @@ fn (mut w Walker) expr(node_ ast.Expr) {
 					// println('>>> else, ast.Ident kind: $node.kind')
 				}
 			}
+		}
+		ast.LambdaExpr {
+			w.expr(node.func)
 		}
 		ast.Likely {
 			w.expr(node.expr)

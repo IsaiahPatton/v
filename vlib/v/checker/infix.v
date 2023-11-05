@@ -14,7 +14,7 @@ fn (mut c Checker) infix_expr(mut node ast.InfixExpr) ast.Type {
 	c.expected_type = left_type
 
 	// `if n is ast.Ident && n.is_mut { ... }`
-	if node.op == .and {
+	if !c.inside_sql && node.op == .and {
 		mut left_node := node.left
 		for mut left_node is ast.InfixExpr {
 			if left_node.op == .and && mut left_node.right is ast.InfixExpr {
@@ -42,6 +42,21 @@ fn (mut c Checker) infix_expr(mut node ast.InfixExpr) ast.Type {
 
 	if node.op == .key_is {
 		c.inside_x_is_type = true
+	}
+	// `arr << if n > 0 { 10 } else { 11 }` set the right c.expected_type
+	if node.op == .left_shift && c.table.sym(left_type).kind == .array {
+		if mut node.right is ast.IfExpr {
+			if node.right.is_expr && node.right.branches.len > 0 {
+				mut last_stmt := node.right.branches[0].stmts.last()
+				if mut last_stmt is ast.ExprStmt {
+					expr_typ := c.expr(mut last_stmt.expr)
+					info := c.table.sym(left_type).array_info()
+					if expr_typ == info.elem_type {
+						c.expected_type = info.elem_type
+					}
+				}
+			}
+		}
 	}
 	mut right_type := c.expr(mut node.right)
 	if node.op == .key_is {
@@ -499,7 +514,8 @@ fn (mut c Checker) infix_expr(mut node ast.InfixExpr) ast.Type {
 			return c.check_like_operator(node)
 		}
 		.left_shift {
-			if left_final_sym.kind == .array {
+			if left_final_sym.kind == .array
+				|| c.table.sym(c.unwrap_generic(left_type)).kind == .array {
 				if !node.is_stmt {
 					c.error('array append cannot be used in an expression', node.pos)
 				}
@@ -580,13 +596,21 @@ fn (mut c Checker) infix_expr(mut node ast.InfixExpr) ast.Type {
 				left_type
 			} else {
 				// signed types' idx adds with 5 will get correct relative unsigned type
-				// i8 		=> byte
-				// i16 		=> u16
+				// i8 	=> byte
+				// i16 	=> u16
 				// int  	=> u32
 				// i64  	=> u64
 				// isize	=> usize
 				// i128 	=> u128 NOT IMPLEMENTED YET
-				left_type.idx() + ast.u32_type_idx - ast.int_type_idx
+				match left_type.idx() {
+					ast.i8_type_idx { ast.u8_type_idx }
+					ast.i16_type_idx { ast.u16_type_idx }
+					ast.i32_type_idx { ast.u32_type_idx }
+					ast.int_type_idx { ast.u32_type_idx }
+					ast.i64_type_idx { ast.u64_type_idx }
+					ast.isize_type_idx { ast.usize_type_idx }
+					else { 0 }
+				}
 			}
 
 			if modified_left_type == 0 {
@@ -639,9 +663,13 @@ fn (mut c Checker) infix_expr(mut node ast.InfixExpr) ast.Type {
 					parent_left_type := left_sym.info.sum_type
 					left_sym = c.table.sym(parent_left_type)
 				}
-				if left_sym.kind !in [.interface_, .sum_type] {
+				if c.inside_sql {
+					if typ != ast.none_type_idx {
+						c.error('`${op}` can only be used to test for none in sql', node.pos)
+					}
+				} else if left_sym.kind !in [.interface_, .sum_type] {
 					c.error('`${op}` can only be used with interfaces and sum types',
-						node.pos)
+						node.pos) // can be used in sql too, but keep err simple
 				} else if mut left_sym.info is ast.SumType {
 					if typ !in left_sym.info.variants {
 						c.error('`${left_sym.name}` has no variant `${right_sym.name}`',
@@ -734,7 +762,8 @@ fn (mut c Checker) infix_expr(mut node ast.InfixExpr) ast.Type {
 	if left_is_option || right_is_option {
 		opt_infix_pos := if left_is_option { left_pos } else { right_pos }
 		if (node.left !in [ast.Ident, ast.SelectorExpr, ast.ComptimeSelector]
-			|| node.op in [.eq, .ne, .lt, .gt, .le, .ge]) && right_sym.kind != .none_ {
+			|| node.op in [.eq, .ne, .lt, .gt, .le, .ge]) && right_sym.kind != .none_
+			&& !c.inside_sql {
 			c.error('unwrapped Option cannot be used in an infix expression', opt_infix_pos)
 		}
 	}

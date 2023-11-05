@@ -9,6 +9,14 @@ import v.pref
 
 pub type TypeDecl = AliasTypeDecl | FnTypeDecl | SumTypeDecl
 
+// pub const int_type_name = $if amd64 || arm64 {
+pub const int_type_name = $if new_int ? {
+	//'int'
+	'i64'
+} $else {
+	'int'
+}
+
 pub type Expr = AnonFn
 	| ArrayDecompose
 	| ArrayInit
@@ -38,6 +46,7 @@ pub type Expr = AnonFn
 	| InfixExpr
 	| IntegerLiteral
 	| IsRefType
+	| LambdaExpr
 	| Likely
 	| LockExpr
 	| MapInit
@@ -87,6 +96,7 @@ pub type Stmt = AsmStmt
 	| Module
 	| NodeError
 	| Return
+	| SemicolonStmt
 	| SqlStmt
 	| StructDecl
 	| TypeDecl
@@ -300,6 +310,11 @@ pub:
 	is_skipped bool      // module main can be skipped in single file programs
 }
 
+pub struct SemicolonStmt {
+pub:
+	pos token.Pos
+}
+
 [minify]
 pub struct StructField {
 pub:
@@ -309,6 +324,7 @@ pub:
 	comments         []Comment
 	i                int
 	has_default_expr bool
+	attrs_has_at     bool // TODO: remove in next stage
 	attrs            []Attr
 	is_pub           bool
 	default_val      string
@@ -373,11 +389,11 @@ pub:
 	generic_types []Type
 	is_pub        bool
 	// _pos fields for vfmt
-	mut_pos      int // mut:
-	pub_pos      int // pub:
-	pub_mut_pos  int // pub mut:
-	global_pos   int // __global:
-	module_pos   int // module:
+	mut_pos      int = -1 // mut:
+	pub_pos      int = -1 // pub:
+	pub_mut_pos  int = -1 // pub mut:
+	global_pos   int = -1 // __global:
+	module_pos   int = -1 // module:
 	language     Language
 	is_union     bool
 	attrs        []Attr
@@ -500,7 +516,7 @@ pub mut:
 	decl           FnDecl
 	inherited_vars []Param
 	typ            Type // the type of anonymous fn. Both .typ and .decl.name are auto generated
-	has_gen        map[string]bool // has been generated
+	has_gen        map[string]bool // a map of the names of all generic anon functions, generated from it
 }
 
 // function or method declaration
@@ -776,15 +792,15 @@ pub:
 	share           ShareType
 	is_mut          bool
 	is_autofree_tmp bool
-	is_arg          bool // fn args should not be autofreed
-	is_auto_deref   bool
 	is_inherited    bool
 	has_inherited   bool
 pub mut:
-	expr       Expr
-	typ        Type
-	orig_type  Type   // original sumtype type; 0 if it's not a sumtype
-	smartcasts []Type // nested sum types require nested smart casting, for that a list of types is needed
+	is_arg        bool // fn args should not be autofreed
+	is_auto_deref bool
+	expr          Expr
+	typ           Type
+	orig_type     Type   // original sumtype type; 0 if it's not a sumtype
+	smartcasts    []Type // nested sum types require nested smart casting, for that a list of types is needed
 	// TODO: move this to a real docs site later
 	// 10 <- original type (orig_type)
 	//   [11, 12, 13] <- cast order (smartcasts)
@@ -885,6 +901,7 @@ pub mut:
 	generic_fns      []&FnDecl
 	global_labels    []string // from `asm { .globl labelname }`
 	template_paths   []string // all the .html/.md files that were processed with $tmpl
+	unique_prefix    string   // a hash of the `.path` field, used for making anon fn generation unique
 }
 
 [unsafe]
@@ -1247,21 +1264,12 @@ pub mut:
 	// ct_conds is filled by the checker, based on the current nesting of `$if cond1 {}` blocks
 }
 
-/*
-// filter(), map(), sort()
-pub struct Lambda {
-pub:
-	name string
-}
-*/
-
 // variable assign statement
 [minify]
 pub struct AssignStmt {
 pub:
 	op           token.Kind // include: =,:=,+=,-=,*=,/= and so on; for a list of all the assign operators, see vlib/token/token.v
 	pos          token.Pos
-	comments     []Comment
 	end_comments []Comment
 pub mut:
 	right         []Expr
@@ -1428,17 +1436,17 @@ pub:
 	mod           string
 	has_len       bool
 	has_cap       bool
-	has_default   bool
+	has_init      bool
 	has_index     bool // true if temp variable index is used
 pub mut:
-	exprs        []Expr // `[expr, expr]` or `[expr]Type{}` for fixed array
-	len_expr     Expr   // len: expr
-	cap_expr     Expr   // cap: expr
-	default_expr Expr   // init: expr
-	expr_types   []Type // [Dog, Cat] // also used for interface_types
-	elem_type    Type   // element type
-	default_type Type   // default value type
-	typ          Type   // array type
+	exprs      []Expr // `[expr, expr]` or `[expr]Type{}` for fixed array
+	len_expr   Expr   // len: expr
+	cap_expr   Expr   // cap: expr
+	init_expr  Expr   // init: expr
+	expr_types []Type // [Dog, Cat] // also used for interface_types
+	elem_type  Type   // element type
+	init_type  Type   // init: value type
+	typ        Type   // array type
 }
 
 pub struct ArrayDecompose {
@@ -1784,6 +1792,20 @@ pub:
 	pos         token.Pos
 }
 
+pub struct LambdaExpr {
+pub:
+	pos token.Pos
+pub mut:
+	params     []Ident
+	pos_expr   token.Pos
+	expr       Expr
+	pos_end    token.Pos
+	scope      &Scope  = unsafe { nil }
+	func       &AnonFn = unsafe { nil }
+	is_checked bool
+	typ        Type
+}
+
 pub struct Likely {
 pub:
 	pos       token.Pos
@@ -1905,7 +1927,7 @@ pub:
 	is_generated bool
 	scope        &Scope = unsafe { nil }
 pub mut:
-	object_var_name string   // `user`
+	object_var      string   // `user`
 	updated_columns []string // for `update set x=y`
 	table_expr      TypeNode
 	fields          []StructField
@@ -1971,7 +1993,7 @@ pub fn (expr Expr) pos() token.Pos {
 		IsRefType, Likely, LockExpr, MapInit, MatchExpr, None, OffsetOf, OrExpr, ParExpr,
 		PostfixExpr, PrefixExpr, RangeExpr, SelectExpr, SelectorExpr, SizeOf, SqlExpr,
 		StringInterLiteral, StringLiteral, StructInit, TypeNode, TypeOf, UnsafeExpr, ComptimeType,
-		Nil {
+		LambdaExpr, Nil {
 			return expr.pos
 		}
 		IndexExpr {
@@ -2061,6 +2083,15 @@ pub fn (e &Expr) is_lockable() bool {
 	return match e {
 		Ident { true }
 		SelectorExpr { e.expr.is_lockable() }
+		else { false }
+	}
+}
+
+// returns if an expression has call expr`
+pub fn (e &Expr) has_fn_call() bool {
+	return match e {
+		CallExpr { true }
+		SelectorExpr { e.expr.has_fn_call() }
 		else { false }
 	}
 }
@@ -2161,6 +2192,12 @@ pub fn (node Node) children() []Node {
 			}
 			SelectorExpr, PostfixExpr, UnsafeExpr, AsCast, ParExpr, IfGuardExpr, SizeOf, Likely,
 			TypeOf, ArrayDecompose {
+				children << node.expr
+			}
+			LambdaExpr {
+				for p in node.params {
+					children << Node(Expr(p))
+				}
 				children << node.expr
 			}
 			LockExpr, OrExpr {
@@ -2373,6 +2410,9 @@ pub fn all_registers(mut t Table, arch pref.Arch) map[string]ScopeObject {
 			for k, v in rv64 {
 				res[k] = v
 			}
+		}
+		.wasm32 {
+			// no registers
 		}
 		else { // TODO
 			panic('all_registers: unhandled arch')

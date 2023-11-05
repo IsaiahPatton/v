@@ -20,17 +20,23 @@ const (
 	pe_section_align              = 0x1000
 	pe_file_align                 = 0x0200
 
+	pe_coff_hdr_size              = 0x18
 	pe_opt_hdr_size               = 0xf0
+	pe32_plus_opt_hdr_size        = 0x70
 	pe_header_size                = pe_file_align
+	pe_section_header_size        = 0x28
 	pe_stack_size                 = 0x200000 // gcc default on windows
 	pe_heap_size                  = 0x100000 // gcc default on windows
 	// tcc defaults
 	pe_major_linker_version       = 6
-	pe_minor_linker_verion        = 0
+	pe_minor_linker_version       = 0
 	pe_major_os_version           = 4
 	pe_minor_os_version           = 0
 	pe_major_subsystem_version    = 4
 	pe_minor_subsystem_version    = 0
+
+	pe_header_machine_offset      = 4
+	pe_number_of_sections_offset  = 6
 
 	pe_num_data_dirs              = 0x10
 
@@ -53,7 +59,7 @@ const (
 	pe_scn_mem_shared             = 0x10000000
 	pe_scn_mem_execute            = 0x20000000
 	pe_scn_mem_read               = 0x40000000
-	pe_scn_mem_write              = int(u32(0x80000000))
+	pe_scn_mem_write              = i32(u32(0x80000000))
 	// obj files only:
 	pe_scn_align_1bytes           = 0x00100000
 	pe_scn_align_2bytes           = 0x00200000
@@ -72,21 +78,21 @@ const (
 )
 
 enum PeMachine as u16 {
-	i386 = 0x014c
+	i386  = 0x014c
 	amd64 = 0x8664
 	arm64 = 0xaa64
 }
 
 enum PeMagic as u16 {
-	mz = 0x5a4d // dos(mz)-header magic number
-	pe = 0x4550 // pe-header magic number
-	pe32 = 0x010b // PE32 optional header magic number
+	mz       = 0x5a4d // dos(mz)-header magic number
+	pe       = 0x4550 // pe-header magic number
+	pe32     = 0x010b // PE32 optional header magic number
 	pe32plus = 0x020b // PE32+ optional header magic number
 }
 
 // reference: https://learn.microsoft.com/en-us/windows/win32/debug/pe-format?redirectedfrom=MSDN#windows-subsystem
 enum PeSubsystem as u16 {
-	unknown = 0
+	unknown                  = 0
 	native
 	windows_gui
 	windows_cui
@@ -104,16 +110,16 @@ enum PeSubsystem as u16 {
 
 // reference: https://learn.microsoft.com/en-us/windows/win32/debug/pe-format?redirectedfrom=MSDN#dll-characteristics
 enum DllCharacteristics as u16 {
-	high_entropy_va = 0x0020
-	dynamic_base = 0x0040
-	force_integrity = 0x0080
-	nx_compat = 0x0100
-	no_isolation = 0x0200
-	no_seh = 0x0400
-	no_bind = 0x0800
-	appcontainer = 0x1000
-	wdm_driver = 0x2000
-	guard_cf = 0x4000
+	high_entropy_va       = 0x0020
+	dynamic_base          = 0x0040
+	force_integrity       = 0x0080
+	nx_compat             = 0x0100
+	no_isolation          = 0x0200
+	no_seh                = 0x0400
+	no_bind               = 0x0800
+	appcontainer          = 0x1000
+	wdm_driver            = 0x2000
+	guard_cf              = 0x4000
 	terminal_server_aware = 0x8000
 }
 
@@ -133,9 +139,9 @@ fn (mut g Gen) get_pe_machine() PeMachine {
 
 pub fn (mut g Gen) gen_pe_header() {
 	pe_header := [
-		int(PeMagic.pe),
+		i32(PeMagic.pe),
 		0,
-		int(g.get_pe_machine()), // machine
+		i32(g.get_pe_machine()), // machine
 		2, // number of sections
 		0,
 		0, // timestamp
@@ -144,7 +150,7 @@ pub fn (mut g Gen) gen_pe_header() {
 		0, // number of symbols
 		0,
 		native.pe_opt_hdr_size, // 40 // size of optional header
-		int(PeCharacteristics.executable_image),
+		i32(PeCharacteristics.executable_image),
 	]
 
 	// debug descriptions when `-v` is used
@@ -160,12 +166,12 @@ pub fn (mut g Gen) gen_pe_header() {
 			0x16: '; mSizeOfOptionalHeader'
 			0x18: '; mCharacteristics'
 		}
-		assert 0x18 == pe_header.len * 2
+		assert native.pe_coff_hdr_size == pe_header.len * 2
 	}
 
 	g.pe_coff_hdr_pos = g.pos()
 	for i, b in pe_header {
-		end_addr := i * 2 + 2 // allign correctly with description table
+		end_addr := i * 2 + 2 // align correctly with description table
 		g.write16(b)
 		if g.pref.is_verbose && pe_header_description[end_addr] != '' {
 			g.println(pe_header_description[end_addr])
@@ -194,43 +200,43 @@ struct Pe32PlusOptionalHeader {
 	magic                      PeMagic
 	major_linker_version       u8
 	minor_linker_version       u8
-	size_of_code               int
-	size_of_initialized_data   int
-	size_of_uninitialized_data int
-	address_of_entry_point     int
-	base_of_code               int
+	size_of_code               i32
+	size_of_initialized_data   i32
+	size_of_uninitialized_data i32
+	address_of_entry_point     i32
+	base_of_code               i32
 	// PE32 ONLY:
 	// base_of_data u32
 	// NT fields
 	// reference: https://learn.microsoft.com/en-us/windows/win32/debug/pe-format?redirectedfrom=MSDN#optional-header-windows-specific-fields-image-only
 	image_base              i64 // u32 for PE32
-	section_alignment       int
-	file_alignment          int
+	section_alignment       i32
+	file_alignment          i32
 	major_os_version        i16
 	minor_os_version        i16
 	major_image_version     i16
 	minor_image_version     i16
 	major_subsystem_version i16
 	minor_subsystem_version i16
-	win32_version_value     int
-	size_of_image           int
-	size_of_headers         int
-	checksum                int
+	win32_version_value     i32
+	size_of_image           i32
+	size_of_headers         i32
+	checksum                i32
 	subsystem               PeSubsystem
 	dll_characteristics     i16
 	size_of_stack_reserve   i64 // u32 for PE32
 	size_of_stack_commit    i64 // u32 for PE32
 	size_of_heap_reserve    i64 // u32 for PE32
 	size_of_heap_commit     i64 // u32 for PE32
-	loader_flags            int // reserved, MUST be zero
-	number_of_rva_and_sizes int
+	loader_flags            i32 // reserved, MUST be zero
+	number_of_rva_and_sizes i32
 }
 
 fn (mut g Gen) get_pe32_plus_optional_header() Pe32PlusOptionalHeader {
 	return Pe32PlusOptionalHeader{
 		magic: .pe32plus
 		major_linker_version: native.pe_major_linker_version
-		minor_linker_version: native.pe_minor_linker_verion
+		minor_linker_version: native.pe_minor_linker_version
 		image_base: native.image_base
 		section_alignment: native.pe_section_align
 		file_alignment: native.pe_file_align
@@ -247,28 +253,19 @@ fn (mut g Gen) get_pe32_plus_optional_header() Pe32PlusOptionalHeader {
 	}
 }
 
-// implemented because __offsetof() + [packed] structs wasn't consistend across OSs
-fn pe32_plus_optional_header_offsetof(field string) i64 {
-	return match field {
-		'size_of_code' {
-			4
-		}
-		'size_of_initialized_data' {
-			8
-		}
-		'address_of_entry_point' {
-			16
-		}
-		'base_of_code' {
-			20
-		}
-		'size_of_image' {
-			56
-		}
-		else {
-			panic('pe32_plus_optional_header_offsetof("${field}") not implemented')
-		}
-	}
+enum Pe32PlusOPtionalHeaderField {
+	size_of_code             = 4
+	size_of_initialized_data = 8
+	address_of_entry_point   = 16
+	base_of_code             = 20
+	size_of_image            = 56
+	number_of_rva_and_sizes  = 108
+}
+
+// implemented because __offsetof() + [packed] structs wasn't consistent across OSs
+[inline]
+fn pe32_plus_optional_header_offsetof(field Pe32PlusOPtionalHeaderField) i64 {
+	return i64(field)
 }
 
 // for later expandability
@@ -302,7 +299,7 @@ fn (mut g Gen) gen_pe_optional_header(opt_hdr PeOptionalHeader) {
 	g.pe_opt_hdr_pos = g.pos()
 
 	// standard fields
-	g.write16(i16(h.magic))
+	g.write16(i32(h.magic))
 	g.println('; mMagic')
 	g.write8(h.major_linker_version)
 	g.println('; mMajorLinkerVersion')
@@ -328,17 +325,17 @@ fn (mut g Gen) gen_pe_optional_header(opt_hdr PeOptionalHeader) {
 	g.println('; mSectionAlignment')
 	g.write32(h.file_alignment)
 	g.println('; mFileAlignment')
-	g.write16(h.major_os_version)
+	g.write16(i32(h.major_os_version))
 	g.println('; mMajorOperatingSystemVersion')
-	g.write16(h.minor_os_version)
+	g.write16(i32(h.minor_os_version))
 	g.println('; mMinorOperatingSystemVersion')
-	g.write16(h.major_image_version)
+	g.write16(i32(h.major_image_version))
 	g.println('; mMajorImageVersion')
-	g.write16(h.minor_image_version)
+	g.write16(i32(h.minor_image_version))
 	g.println('; mMinorImageVersion')
-	g.write16(h.major_subsystem_version)
+	g.write16(i32(h.major_subsystem_version))
 	g.println('; mMajorSubsystemVersion')
-	g.write16(h.minor_subsystem_version)
+	g.write16(i32(h.minor_subsystem_version))
 	g.println('; mMinorSubsystemVersion')
 	g.write32(h.win32_version_value)
 	g.println('; mWin32VersionValue')
@@ -348,9 +345,9 @@ fn (mut g Gen) gen_pe_optional_header(opt_hdr PeOptionalHeader) {
 	g.println('; mSizeOfHeaders')
 	g.write32(h.checksum)
 	g.println('; mCeckSum')
-	g.write16(int(h.subsystem))
+	g.write16(i32(h.subsystem))
 	g.println('; mSubsystem')
-	g.write16(h.dll_characteristics)
+	g.write16(i32(h.dll_characteristics))
 	g.println('; mDllCharacteristics')
 	g.write64(h.size_of_stack_reserve)
 	g.println('; mSizeOfStackReserve')
@@ -369,8 +366,8 @@ fn (mut g Gen) gen_pe_optional_header(opt_hdr PeOptionalHeader) {
 }
 
 struct PeDataDir {
-	rva  int
-	size int
+	rva  i32
+	size i32
 }
 
 struct PeDataDirs {
@@ -434,36 +431,28 @@ fn (mut g Gen) gen_pe_data_dirs() {
 struct PeSectionHeader {
 	name [8]u8
 mut:
-	virtual_size           int
-	virtual_address        int
-	size_of_raw_data       int
-	pointer_to_raw_data    int
-	pointer_to_relocations int
-	pointer_to_linenumbers int
+	virtual_size           i32
+	virtual_address        i32
+	size_of_raw_data       i32
+	pointer_to_raw_data    i32
+	pointer_to_relocations i32
+	pointer_to_linenumbers i32
 	number_of_relocations  i16
 	number_of_linenumbers  i16
-	characteristics        int
+	characteristics        i32
 }
 
-// implemented because __offsetof() + [packed] structs wasn't consistend across OSs
-fn pe_section_header_offsetof(field string) i64 {
-	return match field {
-		'virtual_size' {
-			8
-		}
-		'virtual_address' {
-			12
-		}
-		'size_of_raw_data' {
-			16
-		}
-		'pointer_to_raw_data' {
-			20
-		}
-		else {
-			panic('PeSectionHeader.offsetof("${field}") not implemented')
-		}
-	}
+enum PeSectionHeaderField {
+	virtual_size        = 8
+	virtual_address     = 12
+	size_of_raw_data    = 16
+	pointer_to_raw_data = 20
+}
+
+// implemented because __offsetof() + [packed] structs wasn't consistent across OSs
+[inline]
+fn pe_section_header_offsetof(field PeSectionHeaderField) i64 {
+	return i64(field)
 }
 
 struct PeSection {
@@ -473,32 +462,32 @@ mut:
 	header_pos i64
 }
 
-fn (mut s PeSection) set_pointer_to_raw_data(mut g Gen, pointer int) {
+fn (mut s PeSection) set_pointer_to_raw_data(mut g Gen, pointer i32) {
 	s.header.pointer_to_raw_data = pointer
-	g.write32_at(s.header_pos + pe_section_header_offsetof('pointer_to_raw_data'), pointer)
+	g.write32_at(s.header_pos + pe_section_header_offsetof(.pointer_to_raw_data), pointer)
 }
 
-fn (mut s PeSection) set_size_of_raw_data(mut g Gen, size int) {
+fn (mut s PeSection) set_size_of_raw_data(mut g Gen, size i32) {
 	if size < s.header.virtual_size {
 		s.set_virtual_size(mut g, size)
 	}
 
 	s.header.pointer_to_raw_data = size
-	g.write32_at(s.header_pos + pe_section_header_offsetof('size_of_raw_data'), size)
+	g.write32_at(s.header_pos + pe_section_header_offsetof(.size_of_raw_data), size)
 }
 
-fn (mut s PeSection) set_virtual_address(mut g Gen, addr int) {
+fn (mut s PeSection) set_virtual_address(mut g Gen, addr i32) {
 	aligned := (addr + native.pe_section_align - 1) & ~(native.pe_section_align - 1)
 
 	s.header.virtual_address = aligned
-	g.write32_at(s.header_pos + pe_section_header_offsetof('virtual_address'), aligned)
+	g.write32_at(s.header_pos + pe_section_header_offsetof(.virtual_address), aligned)
 }
 
-fn (mut s PeSection) set_virtual_size(mut g Gen, size int) {
+fn (mut s PeSection) set_virtual_size(mut g Gen, size i32) {
 	aligned := (size + native.pe_section_align - 1) & ~(native.pe_section_align - 1)
 
 	s.header.virtual_size = aligned
-	g.write32_at(s.header_pos + pe_section_header_offsetof('virtual_size'), aligned)
+	g.write32_at(s.header_pos + pe_section_header_offsetof(.virtual_size), aligned)
 }
 
 fn (mut g Gen) create_pe_section(name string, header PeSectionHeader) PeSection {
@@ -528,11 +517,11 @@ fn (mut g Gen) gen_pe_section_header(mut section PeSection) {
 	g.println('; PointerToRelocations')
 	g.write32(sh.pointer_to_linenumbers)
 	g.println('; PointerToLinenumbers')
-	g.write16(sh.number_of_relocations)
+	g.write16(i32(sh.number_of_relocations))
 	g.println('; NumberOfRelocations')
-	g.write16(sh.number_of_linenumbers)
+	g.write16(i32(sh.number_of_linenumbers))
 	g.println('; NumberOfLinenumbers')
-	g.write32(int(sh.characteristics))
+	g.write32(i32(sh.characteristics))
 }
 
 fn (mut g Gen) gen_pe_sections() {
@@ -558,33 +547,29 @@ fn (mut g Gen) get_pe_section_index(name string) ?int {
 }
 
 struct PeImportDirectoryTable {
-	import_lookup_table_rva int
-	time_date_stamp         int
-	forwarder_chain         int
-	name_rva                int
+	import_lookup_table_rva i32
+	time_date_stamp         i32
+	forwarder_chain         i32
+	name_rva                i32
 mut:
-	import_address_table_rva int
+	import_address_table_rva i32
 }
 
-// implemented because __offsetof() + [packed] structs wasn't consistend across OSs
-fn pe_idt_offsetof(field string) i64 {
-	return match field {
-		'import_address_table_rva' {
-			16
-		}
-		'name_rva' {
-			12
-		}
-		else {
-			panic('pe_import_table_offsetof("${field}") not implemented')
-		}
-	}
+enum PeImportDirectoryTableField {
+	name_rva                 = 12
+	import_address_table_rva = 16
+}
+
+// implemented because __offsetof() + [packed] structs wasn't consistent across OSs
+[inline]
+fn pe_idt_offsetof(field PeImportDirectoryTableField) i64 {
+	return i64(field)
 }
 
 fn default_pe_idt() PeImportDirectoryTable {
 	return PeImportDirectoryTable{
-		forwarder_chain: int(0xffffffff)
-		time_date_stamp: int(0xffffffff)
+		forwarder_chain: i32(0xffffffff)
+		time_date_stamp: i32(0xffffffff)
 	}
 }
 
@@ -621,35 +606,39 @@ fn (mut g Gen) gen_pe_idata() {
 	g.println('; padding to 0x${g.pos().hex()}')
 
 	idata_pos := g.pos()
-	idata_section.set_pointer_to_raw_data(mut g, int(idata_pos))
+	idata_section.set_pointer_to_raw_data(mut g, i32(idata_pos))
 
-	mut imports := [
-		PeDllImport{
-			name: 'KERNEL32.DLL'
-			functions: [
-				'GetStdHandle',
-				'ExitProcess',
-				'WriteFile',
-				// winapi functions
-			]
-		},
-		PeDllImport{
-			name: 'USER32.DLL'
-		},
-		PeDllImport{
-			name: 'msvcrt.dll'
-			functions: [
-				'malloc',
-				'free',
-				'printf',
-				'puts',
-				'isdigit',
-				'isalpha',
-				'memset',
-				// etc...
-			]
-		},
+	g.linker_include_paths << '.'
+
+	mut dll_files := ['KERNEL32.DLL', 'USER32.DLL', 'msvcrt.dll']
+	dll_files << g.linker_libs.map(it + '.dll')
+	mut dlls := dll_files
+		.map(g.lookup_system_dll(it) or { g.n_error('${it}: ${err}') })
+		.map(index_dll(it) or { g.n_error('${it}: ${err}') })
+
+	g.extern_symbols << [
+		'GetStdHandle',
+		'ExitProcess',
+		'WriteFile',
 	]
+
+	for symbol in g.extern_symbols {
+		sym := symbol.all_after('C.')
+		mut found := false
+		for mut dll in dlls {
+			if sym in dll.exports {
+				found = true
+				dll.exports[sym] = true
+				break
+			}
+		}
+
+		if !found {
+			eprintln('could not find symbol `${sym}` in ${dll_files}')
+		}
+	}
+
+	mut imports := dlls.map(it.to_import())
 
 	// import directory table
 	for mut imp in imports {
@@ -661,8 +650,8 @@ fn (mut g Gen) gen_pe_idata() {
 	g.gen_pe_idt(&PeImportDirectoryTable{}, 'null entry') // null entry
 
 	for imp in imports {
-		g.write32_at(imp.idt_pos + pe_idt_offsetof('import_address_table_rva'),
-			int(g.pos() - idata_pos) + idata_section.header.virtual_address + 4)
+		g.write32_at(imp.idt_pos + pe_idt_offsetof(.import_address_table_rva),
+			i32(g.pos() - idata_pos) + idata_section.header.virtual_address + 4)
 
 		for func in imp.functions {
 			g.pe_dll_relocations[func] = g.pos()
@@ -678,9 +667,9 @@ fn (mut g Gen) gen_pe_idata() {
 	g.zeroes(4)
 	g.println('; null entry')
 
-	// dll names	
+	// dll names
 	for imp in imports {
-		g.write32_at(imp.idt_pos + pe_idt_offsetof('name_rva'), int(g.pos() - idata_pos) +
+		g.write32_at(imp.idt_pos + pe_idt_offsetof(.name_rva), i32(g.pos() - idata_pos) +
 			idata_section.header.virtual_address)
 		g.write_string(imp.name)
 		g.println('"${imp.name}"')
@@ -691,7 +680,7 @@ fn (mut g Gen) gen_pe_idata() {
 			g.write64_at(g.pe_dll_relocations[func], i64(u64(g.pos() - idata_pos +
 				i64(idata_section.header.virtual_address)) << 32))
 			g.pe_dll_relocations[func] = g.pe_dll_relocations[func] - idata_pos +
-				idata_section.header.virtual_address + 4 // set correct lookup address for function calls
+				i64(idata_section.header.virtual_address) + 4 // set correct lookup address for function calls
 
 			g.write16(0) // export pointer index; we go via names, so 0
 			g.write_string(func)
@@ -705,7 +694,7 @@ fn (mut g Gen) gen_pe_idata() {
 	}
 
 	// write the section size
-	idata_size := int(g.pos() - idata_pos)
+	idata_size := i32(g.pos() - idata_pos)
 	idata_section.set_size_of_raw_data(mut g, idata_size)
 	idata_section.set_virtual_size(mut g, idata_size)
 }
@@ -742,7 +731,7 @@ pub fn (mut g Gen) generate_pe_header() {
 	}
 	mut text_section := &mut g.pe_sections[text_section_index]
 	g.code_start_pos = g.pos()
-	text_section.set_pointer_to_raw_data(mut g, int(g.code_start_pos))
+	text_section.set_pointer_to_raw_data(mut g, i32(g.code_start_pos))
 
 	g.code_gen.call(0)
 	g.code_gen.ret()
@@ -761,10 +750,10 @@ fn (mut g Gen) patch_section_virtual_addrs() {
 
 		match section.name {
 			'.text' {
-				g.write32_at(g.pe_opt_hdr_pos + pe32_plus_optional_header_offsetof('base_of_code'),
+				g.write32_at(g.pe_opt_hdr_pos + pe32_plus_optional_header_offsetof(.base_of_code),
 					section.header.virtual_address)
 				g.write32_at(g.pe_opt_hdr_pos +
-					pe32_plus_optional_header_offsetof('address_of_entry_point'), section.header.virtual_address)
+					pe32_plus_optional_header_offsetof(.address_of_entry_point), section.header.virtual_address)
 			}
 			else {}
 		}
@@ -772,11 +761,11 @@ fn (mut g Gen) patch_section_virtual_addrs() {
 }
 
 fn (mut g Gen) patch_pe_code_size() {
-	code_size := int(g.file_size_pos - g.code_start_pos)
+	code_size := i32(g.file_size_pos - g.code_start_pos)
 
-	g.write32_at(g.pe_opt_hdr_pos + pe32_plus_optional_header_offsetof('size_of_code'),
+	g.write32_at(g.pe_opt_hdr_pos + pe32_plus_optional_header_offsetof(.size_of_code),
 		code_size)
-	g.write32_at(g.pe_opt_hdr_pos + pe32_plus_optional_header_offsetof('size_of_initialized_data'),
+	g.write32_at(g.pe_opt_hdr_pos + pe32_plus_optional_header_offsetof(.size_of_initialized_data),
 		code_size)
 
 	text_section_index := g.get_pe_section_index('.text') or {
@@ -791,7 +780,7 @@ fn (mut g Gen) patch_pe_image_size() {
 	last_section := g.pe_sections.last()
 	image_size := (last_section.header.virtual_address + last_section.header.virtual_size +
 		native.pe_section_align - 1) & ~(native.pe_section_align - 1)
-	g.write32_at(g.pe_opt_hdr_pos + pe32_plus_optional_header_offsetof('size_of_image'),
+	g.write32_at(g.pe_opt_hdr_pos + pe32_plus_optional_header_offsetof(.size_of_image),
 		image_size)
 }
 
@@ -812,12 +801,12 @@ pub fn (mut g Gen) generate_pe_footer() {
 	match g.pref.arch {
 		.arm64 {
 			bl_next := u32(0x94000001)
-			g.write32_at(g.code_start_pos, int(bl_next))
+			g.write32_at(g.code_start_pos, i32(bl_next))
 		}
 		.amd64 {
 			// +1 is for "e8"
 			// -5 is for "e8 00 00 00 00"
-			g.write32_at(g.code_start_pos + 1, int(g.main_fn_addr - g.code_start_pos) - 5)
+			g.write32_at(g.code_start_pos + 1, i32(g.main_fn_addr - g.code_start_pos) - 5)
 		}
 		else {
 			g.n_error('unsupported platform ${g.pref.arch}')

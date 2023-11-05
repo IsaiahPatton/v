@@ -3,7 +3,6 @@
 module checker
 
 import os
-import time
 import v.ast
 import v.vmod
 import v.token
@@ -13,7 +12,6 @@ import v.util.version
 import v.errors
 import v.pkgconfig
 import v.transformer
-import strings
 
 const (
 	int_min                                        = int(0x80000000)
@@ -44,17 +42,24 @@ pub const (
 
 [heap; minify]
 pub struct Checker {
-	pref &pref.Preferences = unsafe { nil } // Preferences shared from V struct
 pub mut:
-	table                      &ast.Table = unsafe { nil }
-	file                       &ast.File  = unsafe { nil }
-	nr_errors                  int
-	nr_warnings                int
-	nr_notices                 int
-	errors                     []errors.Error
-	warnings                   []errors.Warning
-	notices                    []errors.Notice
-	error_lines                []int // to avoid printing multiple errors for the same line
+	pref &pref.Preferences = unsafe { nil } // Preferences shared from V struct
+	//
+	table &ast.Table = unsafe { nil }
+	file  &ast.File  = unsafe { nil }
+	//
+	nr_errors     int
+	nr_warnings   int
+	nr_notices    int
+	errors        []errors.Error
+	warnings      []errors.Warning
+	notices       []errors.Notice
+	error_lines   map[string]bool // dedup errors
+	warning_lines map[string]bool // dedup warns
+	notice_lines  map[string]bool // dedup notices
+	error_details []string
+	should_abort  bool // when too many errors/warnings/notices are accumulated, .should_abort becomes true. It is checked in statement/expression loops, so the checker can return early, instead of wasting time.
+	//
 	expected_type              ast.Type
 	expected_or_type           ast.Type        // fn() or { 'this type' } eg. string. expected or block type
 	expected_expr_type         ast.Type        // if/match is_expr: expected_type
@@ -66,7 +71,6 @@ pub mut:
 	locked_names               []string // vars that are currently locked
 	rlocked_names              []string // vars that are currently read-locked
 	in_for_count               int      // if checker is currently in a for loop
-	should_abort               bool     // when too many errors/warnings/notices are accumulated, .should_abort becomes true. It is checked in statement/expression loops, so the checker can return early, instead of wasting time.
 	returns                    bool
 	scope_returns              bool
 	is_builtin_mod             bool // true inside the 'builtin', 'os' or 'strconv' modules; TODO: remove the need for special casing this
@@ -89,6 +93,8 @@ pub mut:
 	smartcast_mut_pos          token.Pos // match mut foo, if mut foo is Foo
 	smartcast_cond_pos         token.Pos // match cond
 	ct_cond_stack              []ast.Expr
+	ct_user_defines            map[string]ComptimeBranchSkipState
+	ct_system_defines          map[string]ComptimeBranchSkipState
 mut:
 	stmt_level int // the nesting level inside each stmts list;
 	// .stmt_level is used to check for `evaluated but not used` ExprStmts like `1 << 1`
@@ -100,7 +106,6 @@ mut:
 	ensure_generic_type_level        int // to avoid infinite recursion segfaults in ensure_generic_type_specify_type_names
 	cur_orm_ts                       ast.TypeSymbol
 	cur_anon_fn                      &ast.AnonFn = unsafe { nil }
-	error_details                    []string
 	vmod_file_content                string     // needed for @VMOD_FILE, contents of the file, *NOT its path**
 	loop_label                       string     // set when inside a labelled for loop
 	vweb_gen_types                   []ast.Type // vweb route checks
@@ -119,17 +124,20 @@ mut:
 	need_recheck_generic_fns         bool // need recheck generic fns because there are cascaded nested generic fn
 	inside_sql                       bool // to handle sql table fields pseudo variables
 	inside_selector_expr             bool
-	inside_println_arg               bool
+	inside_casting_to_str            bool
 	inside_decl_rhs                  bool
 	inside_if_guard                  bool // true inside the guard condition of `if x := opt() {}`
 	inside_assign                    bool
-	doing_line_info                  int    // a quick single file run when called with v -line-info (contains line nr to inspect)
-	doing_line_path                  string // same, but stores the path being parsed
-	is_index_assign                  bool
-	comptime_call_pos                int // needed for correctly checking use before decl for templates
-	goto_labels                      map[string]ast.GotoLabel // to check for unused goto labels
-	enum_data_type                   ast.Type
-	fn_return_type                   ast.Type
+	// doing_line_info                  int    // a quick single file run when called with v -line-info (contains line nr to inspect)
+	// doing_line_path                  string // same, but stores the path being parsed
+	is_index_assign   bool
+	comptime_call_pos int // needed for correctly checking use before decl for templates
+	goto_labels       map[string]ast.GotoLabel // to check for unused goto labels
+	enum_data_type    ast.Type
+	fn_return_type    ast.Type
+	orm_table_fields  map[string][]ast.StructField // known table structs
+	//
+	v_current_commit_hash string // same as old C.V_CURRENT_COMMIT_HASH
 }
 
 pub fn new_checker(table &ast.Table, pref_ &pref.Preferences) &Checker {
@@ -142,6 +150,7 @@ pub fn new_checker(table &ast.Table, pref_ &pref.Preferences) &Checker {
 		pref: pref_
 		timers: util.new_timers(should_print: timers_should_print, label: 'checker')
 		match_exhaustive_cutoff_limit: pref_.checker_match_exhaustive_cutoff_limit
+		v_current_commit_hash: version.githash(pref_.building_v)
 	}
 }
 
@@ -173,9 +182,10 @@ fn (mut c Checker) reset_checker_state_at_start_of_new_file() {
 	c.loop_label = ''
 	c.using_new_err_struct = false
 	c.inside_selector_expr = false
-	c.inside_println_arg = false
+	c.inside_casting_to_str = false
 	c.inside_decl_rhs = false
 	c.inside_if_guard = false
+	c.error_details.clear()
 }
 
 pub fn (mut c Checker) check(mut ast_file ast.File) {
@@ -293,6 +303,7 @@ pub fn (mut c Checker) change_current_file(file &ast.File) {
 }
 
 pub fn (mut c Checker) check_files(ast_files []&ast.File) {
+	// println('check_files')
 	// c.files = ast_files
 	mut has_main_mod_file := false
 	mut has_main_fn := false
@@ -381,9 +392,27 @@ pub fn (mut c Checker) check_files(ast_files []&ast.File) {
 			c.error('a _test.v file should have *at least* one `test_` function', token.Pos{})
 		}
 	}
-	// Print line info and exit
-	if c.pref.line_info != '' && c.doing_line_info == 0 {
-		c.do_line_info(c.pref.line_info, ast_files)
+	// After the main checker run, run the line info check, print line info, and exit (if it's present)
+	if c.pref.line_info != '' && !c.pref.linfo.is_running { //'' && c.pref.linfo.line_nr == 0 {
+		// c.do_line_info(c.pref.line_info, ast_files)
+		println('setting is_running=true,  pref.path=${c.pref.linfo.path} curdir' + os.getwd())
+		c.pref.linfo.is_running = true
+		for i, file in ast_files {
+			// println(file.path)
+			if file.path == c.pref.linfo.path {
+				println('running c.check_files')
+				c.check_files([ast_files[i]])
+				exit(0)
+			} else if file.path.starts_with('./') {
+				// Maybe it's a "./foo.v", linfo.path has an absolute path
+				abs_path := os.join_path(os.getwd(), file.path).replace('/./', '/') // TODO join_path shouldn't have /./
+				if abs_path == c.pref.linfo.path {
+					c.check_files([ast_files[i]])
+					exit(0)
+				}
+			}
+		}
+		println('failed to find file "${c.pref.linfo.path}"')
 		exit(0)
 	}
 	// Make sure fn main is defined in non lib builds
@@ -439,7 +468,7 @@ fn (mut c Checker) check_valid_snake_case(name string, identifier string, pos to
 	if c.pref.translated || c.file.is_translated {
 		return
 	}
-	if !c.pref.is_vweb && name.len > 0 && (name[0] == `_` || name.contains('._')) {
+	if !c.pref.is_vweb && name.len > 1 && (name[0] == `_` || name.contains('._')) {
 		c.error('${identifier} `${name}` cannot start with `_`', pos)
 	}
 	if !c.pref.experimental && util.contains_capital(name) {
@@ -472,8 +501,7 @@ fn (mut c Checker) type_decl(node ast.TypeDecl) {
 }
 
 fn (mut c Checker) alias_type_decl(node ast.AliasTypeDecl) {
-	// TODO Remove when `u8` isn't an alias in builtin anymore
-	if c.file.mod.name != 'builtin' {
+	if c.file.mod.name != 'builtin' && !node.name.starts_with('C.') {
 		c.check_valid_pascal_case(node.name, 'type alias', node.pos)
 	}
 	if !c.ensure_type_exists(node.parent_type, node.type_pos) {
@@ -930,8 +958,14 @@ fn (mut c Checker) type_implements(typ ast.Type, interface_type ast.Type, pos to
 		eprintln('> type_implements typ: ${typ.debug()} (`${c.table.type_to_str(typ)}`) | inter_typ: ${interface_type.debug()} (`${c.table.type_to_str(interface_type)}`)')
 	}
 	utyp := c.unwrap_generic(typ)
+	styp := c.table.type_to_str(utyp)
 	typ_sym := c.table.sym(utyp)
 	mut inter_sym := c.table.sym(interface_type)
+	if inter_sym.mod !in [typ_sym.mod, c.mod] && !inter_sym.is_pub && typ_sym.mod != 'builtin' {
+		c.error('`${styp}` cannot implement private interface `${inter_sym.name}` of other module',
+			pos)
+		return false
+	}
 
 	// small hack for JS.Any type. Since `any` in regular V is getting deprecated we have our own JS.Any type for JS backend.
 	if typ_sym.name == 'JS.Any' {
@@ -978,7 +1012,6 @@ fn (mut c Checker) type_implements(typ ast.Type, interface_type ast.Type, pos to
 		// `none` "implements" the Error interface
 		return true
 	}
-	styp := c.table.type_to_str(utyp)
 	if typ_sym.kind == .interface_ && inter_sym.kind == .interface_ && !styp.starts_with('JS.')
 		&& !inter_sym.name.starts_with('JS.') {
 		c.error('cannot implement interface `${inter_sym.name}` with a different interface `${styp}`',
@@ -1201,7 +1234,7 @@ fn (mut c Checker) check_or_expr(node ast.OrExpr, ret_type ast.Type, expr_return
 		}
 		if expr !is ast.Ident && !expr_return_type.has_flag(.option) {
 			if expr_return_type.has_flag(.result) {
-				c.warn('propagating a Result like an Option is deprecated, use `foo()!` instead of `foo()?`',
+				c.error('propagating a Result like an Option is deprecated, use `foo()!` instead of `foo()?`',
 					node.pos)
 			} else {
 				c.error('to propagate an Option, the call must also return an Option type',
@@ -1659,8 +1692,7 @@ fn (mut c Checker) const_decl(mut node ast.ConstDecl) {
 				...field.pos
 				len: util.no_cur_mod(field.name, c.mod).len
 			}
-			c.add_error_detail('Module name duplicates will become errors after 2023/10/31.')
-			c.note('duplicate of a module name `${field.name}`', name_pos)
+			c.error('duplicate of a module name `${field.name}`', name_pos)
 		}
 		c.const_names << field.name
 	}
@@ -1938,7 +1970,7 @@ fn (mut c Checker) check_loop_label(label string, pos token.Pos) {
 
 fn (mut c Checker) stmt(mut node ast.Stmt) {
 	$if trace_checker ? {
-		ntype := typeof(node).replace('v.ast.', '')
+		ntype := typeof(*node).replace('v.ast.', '')
 		eprintln('checking: ${c.file.path:-30} | pos: ${node.pos.line_str():-39} | node: ${ntype} | ${node}')
 	}
 	c.expected_type = ast.void_type
@@ -2029,7 +2061,8 @@ fn (mut c Checker) stmt(mut node ast.Stmt) {
 				if mut node.expr is ast.InfixExpr {
 					if node.expr.op == .left_shift {
 						left_sym := c.table.final_sym(node.expr.left_type)
-						if left_sym.kind != .array {
+						if left_sym.kind != .array
+							&& c.table.final_sym(c.unwrap_generic(node.expr.left_type)).kind != .array {
 							c.error('unused expression', node.pos)
 						}
 					}
@@ -2080,6 +2113,7 @@ fn (mut c Checker) stmt(mut node ast.Stmt) {
 			c.return_stmt(mut node)
 			c.scope_returns = true
 		}
+		ast.SemicolonStmt {}
 		ast.SqlStmt {
 			c.sql_stmt(mut node)
 		}
@@ -2763,6 +2797,9 @@ pub fn (mut c Checker) expr(mut node ast.Expr) ast.Type {
 		ast.IntegerLiteral {
 			return c.int_lit(mut node)
 		}
+		ast.LambdaExpr {
+			return c.lambda_expr(mut node, c.expected_type)
+		}
 		ast.LockExpr {
 			return c.lock_expr(mut node)
 		}
@@ -3158,6 +3195,10 @@ fn (mut c Checker) cast_expr(mut node ast.CastExpr) ast.Type {
 		c.error('casting a function value from one function signature, to another function signature, should be done inside `unsafe{}` blocks',
 			node.pos)
 	}
+	if to_type.is_ptr() && to_sym.kind == .alias && from_sym.kind == .map {
+		c.error('cannot cast to alias pointer `${c.table.type_to_str(to_type)}` because `${c.table.type_to_str(from_type)}` is a value',
+			node.pos)
+	}
 
 	if to_type == ast.string_type {
 		if from_type in [ast.u8_type, ast.bool_type] {
@@ -3262,7 +3303,6 @@ fn (mut c Checker) cast_expr(mut node ast.CastExpr) ast.Type {
 				}
 			}
 		}
-		// don't allow casting `string` to `enum`, and suggest using `enum_name.type_to_string(str)` instead
 		if mut node.expr is ast.StringLiteral {
 			c.add_error_detail('use ${c.table.type_to_str(node.typ)}.from_string(\'${node.expr.val}\') instead')
 			c.error('cannot cast `string` to `enum`', node.pos)
@@ -3320,8 +3360,26 @@ fn (mut c Checker) at_expr(mut node ast.AtExpr) ast.Type {
 		.column_nr {
 			node.val = (node.pos.col + 1).str()
 		}
+		.location {
+			mut mname := 'unknown'
+			if c.table.cur_fn != unsafe { nil } {
+				if c.table.cur_fn.is_method {
+					mname = c.table.type_to_str(c.table.cur_fn.receiver.typ) + '{}.' +
+						c.table.cur_fn.name.all_after_last('.')
+				} else {
+					mname = c.table.cur_fn.name
+				}
+				if c.table.cur_fn.is_static_type_method {
+					mname = mname.replace('__static__', '.') + ' (static)'
+				}
+			}
+			node.val = c.file.path + ':' + (node.pos.line_nr + 1).str() + ', ${mname}'
+		}
 		.vhash {
 			node.val = version.vhash()
+		}
+		.v_current_hash {
+			node.val = c.v_current_commit_hash
 		}
 		.vmod_file {
 			// cache the vmod content, do not read it many times
@@ -3362,34 +3420,9 @@ struct ACFieldMethod {
 }
 
 fn (mut c Checker) ident(mut node ast.Ident) ast.Type {
-	if c.doing_line_info > 0 {
-		mut sb := strings.new_builder(10)
+	if c.pref.linfo.is_running {
 		// Mini LS hack (v -line-info "a.v:16")
-		// println('line_nr=${node.pos.line_nr} doing line nr=${c.doing_line_info}')
-		// println('Start line_nr=${node.pos.line_nr}  line2=${c.doing_line_info} file="${c.file.path}", pppp="${c.doing_line_path}"')
-		if node.pos.line_nr == c.doing_line_info && c.file.path == c.doing_line_path {
-			sb.writeln('===')
-			sym := c.table.sym(node.obj.typ)
-			sb.writeln('VAR ${node.name}:${sym.name}')
-			mut struct_info := sym.info as ast.Struct
-			mut fields := []ACFieldMethod{cap: struct_info.fields.len}
-			for field in struct_info.fields {
-				field_sym := c.table.sym(field.typ)
-				fields << ACFieldMethod{field.name, field_sym.name}
-			}
-			for method in sym.methods {
-				method_ret_type := c.table.sym(method.return_type)
-				fields << ACFieldMethod{method.name + '()', method_ret_type.name}
-			}
-			fields.sort(a.name < b.name)
-			for field in fields {
-				sb.writeln('${field.name}:${field.typ}')
-			}
-			res := sb.str().trim_space()
-			if res != '' {
-				println(res)
-			}
-		}
+		c.ident_autocomplete(node)
 	}
 	// TODO: move this
 	if c.const_deps.len > 0 {
@@ -3530,6 +3563,11 @@ fn (mut c Checker) ident(mut node ast.Ident) ast.Type {
 							typ = c.expr(mut obj.expr)
 						}
 					}
+					if c.inside_casting_to_str && obj.orig_type != 0
+						&& c.table.sym(obj.orig_type).kind == .interface_
+						&& c.table.sym(obj.smartcasts.last()).kind != .interface_ {
+						typ = typ.deref()
+					}
 					is_option := typ.has_flag(.option) || typ.has_flag(.result)
 						|| node.or_expr.kind != .absent
 					node.kind = .variable
@@ -3610,6 +3648,13 @@ fn (mut c Checker) ident(mut node ast.Ident) ast.Type {
 					}
 					obj.typ = typ
 					node.obj = obj
+
+					if node.or_expr.kind != .absent {
+						unwrapped_typ := typ.clear_flags(.option, .result)
+						c.expected_or_type = unwrapped_typ
+						c.stmts_ending_with_expression(mut node.or_expr.stmts)
+						c.check_or_expr(node.or_expr, typ, c.expected_or_type, node)
+					}
 					return typ
 				}
 				else {}
@@ -4169,12 +4214,10 @@ fn (mut c Checker) prefix_expr(mut node ast.PrefixExpr) ast.Type {
 			}
 		}
 	}
-	if node.op == .bit_not && !c.unwrap_generic(right_type).is_int() && !c.pref.translated
-		&& !c.file.is_translated {
+	if node.op == .bit_not && !right_sym.is_int() && !c.pref.translated && !c.file.is_translated {
 		c.type_error_for_operator('~', 'integer', right_sym.name, node.pos)
 	}
-	if node.op == .not && right_type != ast.bool_type_idx && !c.pref.translated
-		&& !c.file.is_translated {
+	if node.op == .not && right_sym.kind != .bool && !c.pref.translated && !c.file.is_translated {
 		c.type_error_for_operator('!', 'bool', right_sym.name, node.pos)
 	}
 	// FIXME
@@ -4505,47 +4548,6 @@ fn (mut c Checker) check_dup_keys(node &ast.MapInit, i int) {
 	}
 }
 
-// call this *before* calling error or warn
-fn (mut c Checker) add_error_detail(s string) {
-	c.error_details << s
-}
-
-fn (mut c Checker) add_error_detail_with_pos(msg string, pos token.Pos) {
-	c.add_error_detail(util.formatted_error('details:', msg, c.file.path, pos))
-}
-
-fn (mut c Checker) add_instruction_for_option_type() {
-	c.add_error_detail_with_pos('prepend ? before the declaration of the return type of `${c.table.cur_fn.name}`',
-		c.table.cur_fn.return_type_pos)
-}
-
-fn (mut c Checker) add_instruction_for_result_type() {
-	c.add_error_detail_with_pos('prepend ! before the declaration of the return type of `${c.table.cur_fn.name}`',
-		c.table.cur_fn.return_type_pos)
-}
-
-fn (mut c Checker) warn(s string, pos token.Pos) {
-	allow_warnings := !(c.pref.is_prod || c.pref.warns_are_errors) // allow warnings only in dev builds
-	c.warn_or_error(s, pos, allow_warnings)
-}
-
-fn (mut c Checker) error(message string, pos token.Pos) {
-	$if checker_exit_on_first_error ? {
-		eprintln('\n\n>> checker error: ${message}, pos: ${pos}')
-		print_backtrace()
-		exit(1)
-	}
-	if (c.pref.translated || c.file.is_translated) && message.starts_with('mismatched types') {
-		// TODO move this
-		return
-	}
-	if c.pref.is_verbose {
-		print_backtrace()
-	}
-	msg := message.replace('`Array_', '`[]')
-	c.warn_or_error(msg, pos, false)
-}
-
 fn (c &Checker) check_struct_signature_init_fields(from ast.Struct, to ast.Struct, node ast.StructInit) bool {
 	if node.init_fields.len == 0 {
 		return from.fields.len == to.fields.len
@@ -4591,96 +4593,6 @@ fn (c &Checker) check_struct_signature(from ast.Struct, to ast.Struct) bool {
 	return true
 }
 
-fn (mut c Checker) note(message string, pos token.Pos) {
-	if c.pref.message_limit >= 0 && c.nr_notices >= c.pref.message_limit {
-		c.should_abort = true
-		return
-	}
-	if c.is_generated {
-		return
-	}
-	if c.pref.notes_are_errors {
-		c.error(message, pos)
-	}
-	mut details := ''
-	if c.error_details.len > 0 {
-		details = c.error_details.join('\n')
-		c.error_details = []
-	}
-	wrn := errors.Notice{
-		reporter: errors.Reporter.checker
-		pos: pos
-		file_path: c.file.path
-		message: message
-		details: details
-	}
-	c.file.notices << wrn
-	c.notices << wrn
-	c.nr_notices++
-}
-
-fn (mut c Checker) warn_or_error(message string, pos token.Pos, warn bool) {
-	// add backtrace to issue struct, how?
-	// if c.pref.is_verbose {
-	// print_backtrace()
-	// }
-	mut details := ''
-	if c.error_details.len > 0 {
-		details = c.error_details.join('\n')
-		c.error_details = []
-	}
-	if warn && !c.pref.skip_warnings {
-		c.nr_warnings++
-		if c.pref.message_limit >= 0 && c.nr_warnings >= c.pref.message_limit {
-			c.should_abort = true
-			return
-		}
-		wrn := errors.Warning{
-			reporter: errors.Reporter.checker
-			pos: pos
-			file_path: c.file.path
-			message: message
-			details: details
-		}
-		c.file.warnings << wrn
-		c.warnings << wrn
-		return
-	}
-	if !warn {
-		if c.pref.fatal_errors {
-			util.show_compiler_message('error:', errors.CompilerMessage{
-				pos: pos
-				file_path: c.file.path
-				message: message
-				details: details
-			})
-			exit(1)
-		}
-		c.nr_errors++
-		if c.pref.message_limit >= 0 && c.errors.len >= c.pref.message_limit {
-			c.should_abort = true
-			return
-		}
-		if pos.line_nr !in c.error_lines {
-			err := errors.Error{
-				reporter: errors.Reporter.checker
-				pos: pos
-				file_path: c.file.path
-				message: message
-				details: details
-			}
-			c.file.errors << err
-			c.errors << err
-			c.error_lines << pos.line_nr
-		}
-	}
-}
-
-// for debugging only
-fn (c &Checker) fileis(s string) bool {
-	return c.file.path.contains(s)
-}
-
 fn (mut c Checker) fetch_field_name(field ast.StructField) string {
 	mut name := field.name
 	for attr in field.attrs {
@@ -4694,12 +4606,6 @@ fn (mut c Checker) fetch_field_name(field ast.StructField) string {
 		name = '${name}_id'
 	}
 	return name
-}
-
-fn (mut c Checker) trace[T](fbase string, x &T) {
-	if c.file.path_base == fbase {
-		println('> c.trace | ${fbase:-10s} | ${x}')
-	}
 }
 
 fn (mut c Checker) ensure_generic_type_specify_type_names(typ ast.Type, pos token.Pos) bool {
@@ -4800,10 +4706,23 @@ fn (mut c Checker) ensure_type_exists(typ ast.Type, pos token.Pos) bool {
 	}
 	match sym.kind {
 		.placeholder {
-			if sym.language == .v && !sym.name.starts_with('C.') {
+			// if sym.language == .c && sym.name == 'C.time_t' {
+			// TODO temporary hack until we can define C aliases
+			// return true
+			//}
+			// if sym.language == .v && !sym.name.starts_with('C.') {
+			// if sym.language in [.v, .c] {
+			if sym.language == .v {
 				c.error(util.new_suggestion(sym.name, c.table.known_type_names()).say('unknown type `${sym.name}`'),
 					pos)
 				return false
+			} else if sym.language == .c {
+				c.warn(util.new_suggestion(sym.name, c.table.known_type_names()).say('unknown type `${sym.name}` (all virtual C types must be defined, this will be an error soon)'),
+					pos)
+				// dump(sym)
+				// for _, t in c.table.type_symbols {
+				// println(t.name)
+				//}
 			}
 		}
 		.int_literal, .float_literal {
@@ -4985,45 +4904,6 @@ fn (mut c Checker) check_unused_labels() {
 			c.goto_labels[name].is_used = true // so that this warning is not shown again
 		}
 	}
-}
-
-fn (mut c Checker) deprecate(kind string, name string, attrs []ast.Attr, pos token.Pos) {
-	mut deprecation_message := ''
-	now := time.now()
-	mut after_time := now
-	for attr in attrs {
-		if attr.name == 'deprecated' && attr.arg != '' {
-			deprecation_message = attr.arg
-		}
-		if attr.name == 'deprecated_after' && attr.arg != '' {
-			after_time = time.parse_iso8601(attr.arg) or {
-				c.error('invalid time format', attr.pos)
-				now
-			}
-		}
-	}
-	start_message := '${kind} `${name}`'
-	error_time := after_time.add_days(180)
-	if error_time < now {
-		c.error(semicolonize('${start_message} has been deprecated since ${after_time.ymmdd()}',
-			deprecation_message), pos)
-	} else if after_time < now {
-		c.warn(semicolonize('${start_message} has been deprecated since ${after_time.ymmdd()}, it will be an error after ${error_time.ymmdd()}',
-			deprecation_message), pos)
-	} else if after_time == now {
-		c.warn(semicolonize('${start_message} has been deprecated', deprecation_message),
-			pos)
-	} else {
-		c.note(semicolonize('${start_message} will be deprecated after ${after_time.ymmdd()}, and will become an error after ${error_time.ymmdd()}',
-			deprecation_message), pos)
-	}
-}
-
-fn semicolonize(main string, details string) string {
-	if details == '' {
-		return main
-	}
-	return '${main}; ${details}'
 }
 
 fn (mut c Checker) deprecate_old_isreftype_and_sizeof_of_a_guessed_type(is_guessed_type bool, typ ast.Type, pos token.Pos, label string) {

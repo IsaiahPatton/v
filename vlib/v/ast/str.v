@@ -15,6 +15,11 @@ pub fn (f &FnDecl) get_name() string {
 	}
 }
 
+// get_anon_fn_name returns the unique anonymous function name, based on the prefix, the func signature and its position in the source code
+pub fn (table &Table) get_anon_fn_name(prefix string, func &Fn, pos int) string {
+	return 'anon_fn_${prefix}_${table.fn_type_signature(func)}_${pos}'
+}
+
 // get_name returns the real name for the function calling
 pub fn (f &CallExpr) get_name() string {
 	if f.name != '' && f.name.all_after_last('.')[0].is_capital() && f.name.contains('__static__') {
@@ -403,8 +408,8 @@ pub fn (x Expr) str() string {
 			if x.has_cap {
 				fields << 'cap: ${x.cap_expr.str()}'
 			}
-			if x.has_default {
-				fields << 'init: ${x.default_expr.str()}'
+			if x.has_init {
+				fields << 'init: ${x.init_expr.str()}'
 			}
 			typ_str := global_table.type_to_str(x.elem_type)
 			if fields.len > 0 {
@@ -425,7 +430,7 @@ pub fn (x Expr) str() string {
 			return '${x.expr.str()} as ${global_table.type_to_str(x.typ)}'
 		}
 		AtExpr {
-			return '${x.val}'
+			return '${x.name}'
 		}
 		CTempVar {
 			return x.orig.str()
@@ -609,6 +614,10 @@ pub fn (x Expr) str() string {
 			}
 			return 'typeof(${x.expr.str()})'
 		}
+		LambdaExpr {
+			ilist := x.params.map(it.name).join(', ')
+			return '|${ilist}| ${x.expr.str()}'
+		}
 		Likely {
 			return '_likely_(${x.expr.str()})'
 		}
@@ -723,6 +732,16 @@ pub fn (node Stmt) str() string {
 			}
 			return out
 		}
+		Block {
+			mut res := ''
+			res += '{'
+			for s in node.stmts {
+				res += s.str()
+				res += ';'
+			}
+			res += '}'
+			return res
+		}
 		BranchStmt {
 			return node.str()
 		}
@@ -730,14 +749,51 @@ pub fn (node Stmt) str() string {
 			fields := node.fields.map(field_to_string)
 			return 'const (${fields.join(' ')})'
 		}
+		DeferStmt {
+			mut res := ''
+			res += 'defer {'
+			for s in node.stmts {
+				res += s.str()
+				res += ';'
+			}
+			res += '}'
+			return res
+		}
+		EnumDecl {
+			return 'enum ${node.name} { ${node.fields.len} fields }'
+		}
 		ExprStmt {
 			return node.expr.str()
 		}
 		FnDecl {
 			return 'fn ${node.name}( ${node.params.len} params ) { ${node.stmts.len} stmts }'
 		}
-		EnumDecl {
-			return 'enum ${node.name} { ${node.fields.len} fields }'
+		ForInStmt {
+			mut res := ''
+			if node.label.len > 0 {
+				res += '${node.label}: '
+			}
+			res += 'for '
+			if node.key_var != '' {
+				res += node.key_var
+			}
+			if node.key_var != '' && node.val_var != '' {
+				res += ', '
+			}
+			if node.val_var != '' {
+				if node.val_is_mut {
+					res += 'mut '
+				}
+				res += node.val_var
+			}
+			res += ' in '
+			res += node.cond.str()
+			if node.is_range {
+				res += ' .. '
+				res += node.high.str()
+			}
+			res += ' {'
+			return res
 		}
 		ForStmt {
 			if node.is_inf {
@@ -745,8 +801,33 @@ pub fn (node Stmt) str() string {
 			}
 			return 'for ${node.cond} {'
 		}
-		Module {
-			return 'module ${node.name}'
+		GlobalDecl {
+			mut res := ''
+			if node.fields.len == 0 && node.pos.line_nr == node.pos.last_line {
+				return '__global ()'
+			}
+			res += '__global '
+			if node.is_block {
+				res += '( '
+			}
+			for field in node.fields {
+				if field.is_volatile {
+					res += 'volatile '
+				}
+				res += field.name
+				res += ' '
+				if field.has_expr {
+					res += '= '
+					res += field.expr.str()
+				} else {
+					res += global_table.type_to_str(field.typ)
+				}
+				res += ';'
+			}
+			if node.is_block {
+				res += ' )'
+			}
+			return res
 		}
 		Import {
 			mut out := 'import ${node.mod}'
@@ -754,6 +835,9 @@ pub fn (node Stmt) str() string {
 				out += ' as ${node.alias}'
 			}
 			return out
+		}
+		Module {
+			return 'module ${node.name}'
 		}
 		Return {
 			mut out := 'return'

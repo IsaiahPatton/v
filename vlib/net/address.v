@@ -17,12 +17,7 @@ const (
 
 // new_ip6 creates a new Addr from the IP6 address family, based on the given port and addr
 pub fn new_ip6(port u16, addr [16]u8) Addr {
-	n_port := $if tinyc {
-		conv.hton16(port)
-	} $else {
-		u16(C.htons(port))
-	}
-
+	n_port := conv.hton16(port)
 	a := Addr{
 		f: u8(AddrFamily.ip6)
 		addr: AddrData{
@@ -31,20 +26,13 @@ pub fn new_ip6(port u16, addr [16]u8) Addr {
 			}
 		}
 	}
-
 	unsafe { vmemcpy(&a.addr.Ip6.addr[0], &addr[0], 16) }
-
 	return a
 }
 
 // new_ip creates a new Addr from the IPv4 address family, based on the given port and addr
 pub fn new_ip(port u16, addr [4]u8) Addr {
-	n_port := $if tinyc {
-		conv.hton16(port)
-	} $else {
-		u16(C.htons(port))
-	}
-
+	n_port := conv.hton16(port)
 	a := Addr{
 		f: u8(AddrFamily.ip)
 		addr: AddrData{
@@ -53,9 +41,7 @@ pub fn new_ip(port u16, addr [4]u8) Addr {
 			}
 		}
 	}
-
 	unsafe { vmemcpy(&a.addr.Ip.addr[0], &addr[0], 4) }
-
 	return a
 }
 
@@ -92,12 +78,7 @@ pub fn (a Ip) str() string {
 	}
 
 	saddr := unsafe { cstring_to_vstring(&buf[0]) }
-	port := $if tinyc {
-		conv.hton16(a.port)
-	} $else {
-		C.ntohs(a.port)
-	}
-
+	port := conv.ntoh16(a.port)
 	return '${saddr}:${port}'
 }
 
@@ -112,12 +93,7 @@ pub fn (a Ip6) str() string {
 	}
 
 	saddr := unsafe { cstring_to_vstring(&buf[0]) }
-	port := $if tinyc {
-		conv.hton16(a.port)
-	} $else {
-		C.ntohs(a.port)
-	}
-
+	port := conv.ntoh16(a.port)
 	return '[${saddr}]:${port}'
 }
 
@@ -294,14 +270,24 @@ pub fn (a Addr) str() string {
 
 // addr_from_socket_handle returns an address, based on the given integer socket `handle`
 pub fn addr_from_socket_handle(handle int) Addr {
-	addr := Addr{
+	mut addr := Addr{
 		addr: AddrData{
 			Ip6: Ip6{}
 		}
 	}
-	size := sizeof(addr)
-
+	mut size := sizeof(addr)
 	C.getsockname(handle, voidptr(&addr), &size)
+	return addr
+}
 
+// peer_addr_from_socket_handle retrieves the ip address and port number, given a socket handle
+pub fn peer_addr_from_socket_handle(handle int) !Addr {
+	mut addr := Addr{
+		addr: AddrData{
+			Ip6: Ip6{}
+		}
+	}
+	mut size := sizeof(Addr)
+	socket_error_message(C.getpeername(handle, voidptr(&addr), &size), 'peer_addr_from_socket_handle failed')!
 	return addr
 }

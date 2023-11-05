@@ -1,4 +1,5 @@
 ## [Version 0.3]
+
 - [x] gc option
 - [x] channels
 - [x] lock{}
@@ -41,14 +42,16 @@
 - [ ] -skip-unused on by default
 - [ ] 64/32 bit int depending on arch (will remove array.len limitation on 64 bit systems)
 - [ ] `copy()` builtin function (e.g. for easier conversion from `[]Foo` to `[4]Foo`)
-- [ ] Lambdas: `a.sort(|a, b| a > b)`
+- [x] Lambdas: `a.sort(|a, b| a > b)`
+- [ ] Custom attributes.
+- [ ] `arr.first() or { }` like `arr[0] or { }`
 
 ## [Version 1.0]
 
 - [ ] Cross compilation of C
 - [ ] Big remaining bugs fixed
 - [ ] More powerful comptime
-- [ ] Constraits for generics
+- [ ] Constrains for generics
 - [ ] Coroutines on Windows
 - [ ] Autofree memory management option ready for production
 - [ ] C2V supporting entire C99 standard

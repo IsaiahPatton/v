@@ -15,42 +15,49 @@ fn (mut c Checker) array_init(mut node ast.ArrayInit) ast.Type {
 			if node.typ.has_flag(.option) && (node.has_cap || node.has_len) {
 				c.error('Option array `${elem_sym.name}` cannot have initializers', node.pos)
 			}
-			if elem_sym.kind == .struct_ {
-				elem_info := elem_sym.info as ast.Struct
-				if elem_info.generic_types.len > 0 && elem_info.concrete_types.len == 0
-					&& !node.elem_type.has_flag(.generic) {
-					if c.table.cur_concrete_types.len == 0 {
-						c.error('generic struct `${elem_sym.name}` must specify type parameter, e.g. ${elem_sym.name}[int]',
-							node.elem_type_pos)
-					} else {
-						c.error('generic struct `${elem_sym.name}` must specify type parameter, e.g. ${elem_sym.name}[T]',
-							node.elem_type_pos)
+			match elem_sym.info {
+				ast.Struct {
+					if elem_sym.info.generic_types.len > 0 && elem_sym.info.concrete_types.len == 0
+						&& !node.elem_type.has_flag(.generic) {
+						if c.table.cur_concrete_types.len == 0 {
+							c.error('generic struct `${elem_sym.name}` must specify type parameter, e.g. ${elem_sym.name}[int]',
+								node.elem_type_pos)
+						} else {
+							c.error('generic struct `${elem_sym.name}` must specify type parameter, e.g. ${elem_sym.name}[T]',
+								node.elem_type_pos)
+						}
 					}
 				}
-			} else if elem_sym.kind == .interface_ {
-				elem_info := elem_sym.info as ast.Interface
-				if elem_info.generic_types.len > 0 && elem_info.concrete_types.len == 0
-					&& !node.elem_type.has_flag(.generic) {
-					if c.table.cur_concrete_types.len == 0 {
-						c.error('generic interface `${elem_sym.name}` must specify type parameter, e.g. ${elem_sym.name}[int]',
-							node.elem_type_pos)
-					} else {
-						c.error('generic interface `${elem_sym.name}` must specify type parameter, e.g. ${elem_sym.name}[T]',
-							node.elem_type_pos)
+				ast.Interface {
+					if elem_sym.info.generic_types.len > 0 && elem_sym.info.concrete_types.len == 0
+						&& !node.elem_type.has_flag(.generic) {
+						if c.table.cur_concrete_types.len == 0 {
+							c.error('generic interface `${elem_sym.name}` must specify type parameter, e.g. ${elem_sym.name}[int]',
+								node.elem_type_pos)
+						} else {
+							c.error('generic interface `${elem_sym.name}` must specify type parameter, e.g. ${elem_sym.name}[T]',
+								node.elem_type_pos)
+						}
 					}
 				}
-			} else if elem_sym.kind == .sum_type {
-				elem_info := elem_sym.info as ast.SumType
-				if elem_info.generic_types.len > 0 && elem_info.concrete_types.len == 0
-					&& !node.elem_type.has_flag(.generic) {
-					if c.table.cur_concrete_types.len == 0 {
-						c.error('generic sumtype `${elem_sym.name}` must specify type parameter, e.g. ${elem_sym.name}[int]',
-							node.elem_type_pos)
-					} else {
-						c.error('generic sumtype `${elem_sym.name}` must specify type parameter, e.g. ${elem_sym.name}[T]',
-							node.elem_type_pos)
+				ast.SumType {
+					if elem_sym.info.generic_types.len > 0 && elem_sym.info.concrete_types.len == 0
+						&& !node.elem_type.has_flag(.generic) {
+						if c.table.cur_concrete_types.len == 0 {
+							c.error('generic sumtype `${elem_sym.name}` must specify type parameter, e.g. ${elem_sym.name}[int]',
+								node.elem_type_pos)
+						} else {
+							c.error('generic sumtype `${elem_sym.name}` must specify type parameter, e.g. ${elem_sym.name}[T]',
+								node.elem_type_pos)
+						}
 					}
 				}
+				ast.Alias {
+					if elem_sym.name == 'byte' {
+						c.warn('byte is deprecated, use u8 instead', node.elem_type_pos)
+					}
+				}
+				else {}
 			}
 		}
 		if node.exprs.len == 0 {
@@ -61,23 +68,15 @@ fn (mut c Checker) array_init(mut node ast.ArrayInit) ast.Type {
 				c.check_array_init_para_type('len', mut node.len_expr, node.pos)
 			}
 		}
-		if node.has_default {
-			mut default_expr := node.default_expr
-			default_typ := c.check_expr_opt_call(default_expr, c.expr(mut default_expr))
-			node.default_type = default_typ
-			if !node.elem_type.has_flag(.option) && default_typ.has_flag(.option) {
-				c.error('cannot use unwrapped Option as initializer', default_expr.pos())
-			}
-			c.check_expected(default_typ, node.elem_type) or {
-				c.error(err.msg(), default_expr.pos())
-			}
+		if node.has_init {
+			c.check_array_init_default_expr(mut node)
 		}
 		if node.has_len {
 			len_typ := c.check_expr_opt_call(node.len_expr, c.expr(mut node.len_expr))
 			if len_typ.has_flag(.option) {
 				c.error('cannot use unwrapped Option as length', node.len_expr.pos())
 			}
-			if node.has_len && !node.has_default {
+			if node.has_len && !node.has_init {
 				elem_type_sym := c.table.sym(node.elem_type)
 				if elem_type_sym.kind == .interface_ {
 					c.error('cannot instantiate an array of interfaces without also giving a default `init:` value',
@@ -273,6 +272,20 @@ fn (mut c Checker) array_init(mut node ast.ArrayInit) ast.Type {
 						if !init_expr.obj.expr.typ.is_pure_int() {
 							c.error('only integer types are allowed', init_expr.pos)
 						}
+						if init_expr.obj.expr.expr is ast.IntegerLiteral {
+							if comptime_value := c.eval_comptime_const_expr(init_expr.obj.expr.expr,
+								0)
+							{
+								fixed_size = comptime_value.i64() or { fixed_size }
+							}
+						}
+						if init_expr.obj.expr.expr is ast.InfixExpr {
+							if comptime_value := c.eval_comptime_const_expr(init_expr.obj.expr.expr,
+								0)
+							{
+								fixed_size = comptime_value.i64() or { fixed_size }
+							}
+						}
 					}
 					if comptime_value := c.eval_comptime_const_expr(init_expr.obj.expr,
 						0)
@@ -303,11 +316,21 @@ fn (mut c Checker) array_init(mut node ast.ArrayInit) ast.Type {
 		} else {
 			node.typ = ast.new_type(idx)
 		}
-		if node.has_default {
-			c.expr(mut node.default_expr)
+		if node.has_init {
+			c.check_array_init_default_expr(mut node)
 		}
 	}
 	return node.typ
+}
+
+fn (mut c Checker) check_array_init_default_expr(mut node ast.ArrayInit) {
+	mut init_expr := node.init_expr
+	init_typ := c.check_expr_opt_call(init_expr, c.expr(mut init_expr))
+	node.init_type = init_typ
+	if !node.elem_type.has_flag(.option) && init_typ.has_flag(.option) {
+		c.error('cannot use unwrapped Option as initializer', init_expr.pos())
+	}
+	c.check_expected(init_typ, node.elem_type) or { c.error(err.msg(), init_expr.pos()) }
 }
 
 fn (mut c Checker) check_array_init_para_type(para string, mut expr ast.Expr, pos token.Pos) {
@@ -315,11 +338,17 @@ fn (mut c Checker) check_array_init_para_type(para string, mut expr ast.Expr, po
 	if sym.kind !in [.int, .int_literal] {
 		c.error('array ${para} needs to be an int', pos)
 	}
+	if expr is ast.IntegerLiteral {
+		lit := expr as ast.IntegerLiteral
+		if lit.val.int() < 0 {
+			c.error('array ${para} can not be negative', lit.pos)
+		}
+	}
 }
 
 fn (mut c Checker) ensure_sumtype_array_has_default_value(node ast.ArrayInit) {
 	sym := c.table.sym(node.elem_type)
-	if sym.kind == .sum_type && !node.has_default {
+	if sym.kind == .sum_type && !node.has_init {
 		c.error('cannot initialize sum type array without default value', node.pos)
 	}
 }

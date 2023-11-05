@@ -191,8 +191,8 @@ fn (mut g Gen) struct_init(node ast.StructInit) {
 					continue
 				}
 			}
-			if already_initalised_node_field_index := inited_fields[field.name] {
-				mut sfield := node.init_fields[already_initalised_node_field_index]
+			if already_inited_node_field_index := inited_fields[field.name] {
+				mut sfield := node.init_fields[already_inited_node_field_index]
 				if sfield.typ == 0 {
 					continue
 				}
@@ -231,7 +231,7 @@ fn (mut g Gen) struct_init(node ast.StructInit) {
 				if node.no_keys && sym.kind == .struct_ {
 					sym_info := sym.info as ast.Struct
 					if sym_info.fields.len == node.init_fields.len {
-						sfield.name = sym_info.fields[already_initalised_node_field_index].name
+						sfield.name = sym_info.fields[already_inited_node_field_index].name
 					}
 				}
 				g.struct_init_field(sfield, sym.language)
@@ -323,6 +323,11 @@ fn (mut g Gen) struct_init(node ast.StructInit) {
 }
 
 fn (mut g Gen) zero_struct_field(field ast.StructField) bool {
+	old_inside_cast_in_heap := g.inside_cast_in_heap
+	g.inside_cast_in_heap = 0
+	defer {
+		g.inside_cast_in_heap = old_inside_cast_in_heap
+	}
 	sym := g.table.sym(field.typ)
 	field_name := if sym.language == .v { c_name(field.name) } else { field.name }
 	if sym.info is ast.Struct {
@@ -359,8 +364,7 @@ fn (mut g Gen) zero_struct_field(field ast.StructField) bool {
 	if field.has_default_expr {
 		if sym.kind in [.sum_type, .interface_] {
 			if field.typ.has_flag(.option) {
-				g.expr_opt_with_cast(field.default_expr, field.default_expr_typ.set_flag(.option),
-					field.typ)
+				g.expr_with_opt(field.default_expr, field.default_expr_typ, field.typ)
 			} else {
 				g.expr_with_cast(field.default_expr, field.default_expr_typ, field.typ)
 			}
@@ -387,6 +391,19 @@ fn (mut g Gen) zero_struct_field(field ast.StructField) bool {
 		tmp_var := g.new_tmp_var()
 		g.expr_with_tmp_var(ast.None{}, ast.none_type, field.typ, tmp_var)
 		return true
+	} else if sym.info is ast.ArrayFixed {
+		g.write('{')
+		for i in 0 .. sym.info.size {
+			if sym.info.elem_type.has_flag(.option) {
+				g.expr_with_opt(ast.None{}, ast.none_type, sym.info.elem_type)
+			} else {
+				g.write(g.type_default(sym.info.elem_type))
+			}
+			if i != sym.info.size - 1 {
+				g.write(', ')
+			}
+		}
+		g.write('}')
 	} else {
 		g.write(g.type_default(field.typ))
 	}
@@ -493,7 +510,7 @@ fn (mut g Gen) struct_decl(s ast.Struct, name string, is_anon bool) {
 			field_name := c_name(field.name)
 			volatile_prefix := if field.is_volatile { 'volatile ' } else { '' }
 			mut size_suffix := ''
-			if is_minify && !g.is_cc_msvc {
+			if is_minify && !g.is_cc_msvc && !g.pref.output_cross_c {
 				if field.typ == ast.bool_type_idx {
 					size_suffix = ' : 1'
 				} else {

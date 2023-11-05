@@ -7,6 +7,8 @@ import strings
 import v.ast
 import v.util
 
+const c_fn_name_escape_seq = ['[', '_T_', ']', '']
+
 fn (mut g Gen) is_used_by_main(node ast.FnDecl) bool {
 	mut is_used_by_main := true
 	if g.pref.skip_unused {
@@ -449,7 +451,7 @@ fn (mut g Gen) c_fn_name(node &ast.FnDecl) string {
 		unwrapped_rec_typ := g.unwrap_generic(node.receiver.typ)
 		name = g.cc_type(unwrapped_rec_typ, false) + '_' + name
 		if g.table.sym(unwrapped_rec_typ).kind == .placeholder {
-			name = name.replace_each(['[', '_T_', ']', ''])
+			name = name.replace_each(c.c_fn_name_escape_seq)
 		}
 	}
 	if node.language == .c {
@@ -613,7 +615,7 @@ fn (mut g Gen) fn_decl_params(params []ast.Param, scope &ast.Scope, is_variadic 
 			typ = g.table.sym(typ).array_info().elem_type.set_flag(.variadic)
 		}
 		param_type_sym := g.table.sym(typ)
-		mut param_type_name := g.typ(typ).replace_each(['[', '_T_', ']', ''])
+		mut param_type_name := g.typ(typ).replace_each(c.c_fn_name_escape_seq)
 		if param_type_sym.kind == .function && !typ.has_flag(.option) {
 			info := param_type_sym.info as ast.FnType
 			func := info.func
@@ -1656,6 +1658,10 @@ fn (mut g Gen) fn_call(node ast.CallExpr) {
 	mut print_auto_str := false
 	if is_print && (node.args[0].typ != ast.string_type
 		|| g.comptime_for_method.len > 0 || g.is_comptime_var(node.args[0].expr)) {
+		g.inside_casting_to_str = true
+		defer {
+			g.inside_casting_to_str = false
+		}
 		mut typ := node.args[0].typ
 		if g.is_comptime_var(node.args[0].expr) {
 			ctyp := g.get_comptime_var_type(node.args[0].expr)
@@ -1724,6 +1730,12 @@ fn (mut g Gen) fn_call(node ast.CallExpr) {
 		}
 	}
 	if !print_auto_str {
+		if is_print {
+			g.inside_casting_to_str = true
+			defer {
+				g.inside_casting_to_str = false
+			}
+		}
 		if g.pref.is_debug && node.name == 'panic' {
 			paline, pafile, pamod, pafn := g.panic_debug_info(node.pos)
 			g.write('panic_debug(${paline}, tos3("${pafile}"), tos3("${pamod}"), tos3("${pafn}"),  ')
@@ -2008,7 +2020,7 @@ fn (mut g Gen) call_args(node ast.CallExpr) {
 			}
 		}
 	}
-	// only v variadic, C variadic args will be appeneded like normal args
+	// only v variadic, C variadic args will be appended like normal args
 	is_variadic := expected_types.len > 0 && expected_types.last().has_flag(.variadic)
 		&& node.language == .v
 	for i, arg in args {
@@ -2246,6 +2258,9 @@ fn (mut g Gen) ref_or_deref_arg(arg ast.CallArg, expected_type ast.Type, lang as
 						g.write('(voidptr)&/*qq*/')
 					} else {
 						needs_closing = true
+						if arg_typ_sym.kind in [.sum_type, .interface_] {
+							atype = arg_typ
+						}
 						g.write('ADDR(${g.typ(atype)}/*qq*/, ')
 					}
 				}

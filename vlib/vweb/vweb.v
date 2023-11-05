@@ -87,6 +87,7 @@ pub const (
 		'.js':     'text/javascript'
 		'.json':   'application/json'
 		'.jsonld': 'application/ld+json'
+		'.md':     'text/markdown'
 		'.mid':    'audio/midi audio/x-midi'
 		'.midi':   'audio/midi audio/x-midi'
 		'.mjs':    'text/javascript'
@@ -315,6 +316,7 @@ pub fn (mut ctx Context) redirect(url string) Result {
 
 // Send an not_found response
 pub fn (mut ctx Context) not_found() Result {
+	// TODO add a [must_be_returned] attribute, so that the caller is forced to use `return app.not_found()`
 	if ctx.done {
 		return Result{}
 	}
@@ -515,34 +517,15 @@ pub fn run_at[T](global_app &T, params RunParams) ! {
 		return error('invalid nr_workers `${params.nr_workers}`, it should be above 0')
 	}
 
-	mut l := net.listen_tcp(params.family, '${params.host}:${params.port}') or {
+	listen_address := '${params.host}:${params.port}'
+	mut l := net.listen_tcp(params.family, listen_address) or {
 		ecode := err.code()
 		return error('failed to listen ${ecode} ${err}')
 	}
+	// eprintln('>> vweb listen_address: `${listen_address}` | params.family: ${params.family} | l.addr: ${l.addr()} | params: $params')
 
 	routes := generate_routes(global_app)!
-	// check duplicate routes in controllers
-	mut controllers_sorted := []&ControllerPath{}
-	$if T is ControllerInterface {
-		mut paths := []string{}
-		controllers_sorted = global_app.controllers.clone()
-		controllers_sorted.sort(a.path.len > b.path.len)
-		for controller in controllers_sorted {
-			if controller.host == '' {
-				if controller.path in paths {
-					return error('conflicting paths: duplicate controller handling the route "${controller.path}"')
-				}
-				paths << controller.path
-			}
-		}
-		for method_name, route in routes {
-			for controller_path in paths {
-				if route.path.starts_with(controller_path) {
-					return error('conflicting paths: method "${method_name}" with route "${route.path}" should be handled by the Controller of path "${controller_path}"')
-				}
-			}
-		}
-	}
+	controllers_sorted := check_duplicate_routes_in_controllers[T](global_app, routes)!
 
 	host := if params.host == '' { 'localhost' } else { params.host }
 	if params.show_startup_message {
@@ -574,6 +557,31 @@ pub fn run_at[T](global_app &T, params RunParams) ! {
 			routes: &routes
 		}
 	}
+}
+
+fn check_duplicate_routes_in_controllers[T](global_app &T, routes map[string]Route) ![]&ControllerPath {
+	mut controllers_sorted := []&ControllerPath{}
+	$if T is ControllerInterface {
+		mut paths := []string{}
+		controllers_sorted = global_app.controllers.clone()
+		controllers_sorted.sort(a.path.len > b.path.len)
+		for controller in controllers_sorted {
+			if controller.host == '' {
+				if controller.path in paths {
+					return error('conflicting paths: duplicate controller handling the route "${controller.path}"')
+				}
+				paths << controller.path
+			}
+		}
+		for method_name, route in routes {
+			for controller_path in paths {
+				if route.path.starts_with(controller_path) {
+					return error('conflicting paths: method "${method_name}" with route "${route.path}" should be handled by the Controller of path "${controller_path}"')
+				}
+			}
+		}
+	}
+	return controllers_sorted
 }
 
 fn new_request_app[T](global_app &T, ctx Context, tid int) &T {
@@ -885,7 +893,7 @@ fn route_matches(url_words []string, route_words []string) ?[]string {
 	if url_words.len == route_words.len {
 		for i in 0 .. url_words.len {
 			if route_words[i].starts_with(':') {
-				// We found a path paramater
+				// We found a path parameter
 				params << url_words[i]
 			} else if route_words[i] != url_words[i] {
 				// This url does not match the route
@@ -902,7 +910,7 @@ fn route_matches(url_words []string, route_words []string) ?[]string {
 
 	for i in 0 .. route_words.len - 1 {
 		if route_words[i].starts_with(':') {
-			// We found a path paramater
+			// We found a path parameter
 			params << url_words[i]
 		} else if route_words[i] != url_words[i] {
 			// This url does not match the route
@@ -984,7 +992,7 @@ pub fn (mut ctx Context) host_handle_static(host string, directory_path string, 
 	dir_path := directory_path.trim_space().trim_right('/')
 	mut mount_path := ''
 	if dir_path != '.' && os.is_dir(dir_path) && !root {
-		// Mount point hygene, "./assets" => "/assets".
+		// Mount point hygiene, "./assets" => "/assets".
 		mount_path = '/' + dir_path.trim_left('.').trim('/')
 	}
 	ctx.scan_static_directory(dir_path, mount_path, host)
@@ -1106,10 +1114,10 @@ fn new_worker[T](ch chan &RequestParams, id int) thread {
 		id: id
 		ch: ch
 	}
-	return spawn w.process_incomming_requests[T]()
+	return spawn w.process_incoming_requests[T]()
 }
 
-fn (mut w Worker[T]) process_incomming_requests() {
+fn (mut w Worker[T]) process_incoming_requests() {
 	sid := '[vweb] tid: ${w.id:03d} received request'
 	for {
 		mut params := <-w.ch or { break }

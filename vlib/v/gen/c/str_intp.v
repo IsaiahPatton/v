@@ -48,7 +48,7 @@ fn (mut g Gen) get_default_fmt(ftyp ast.Type, typ ast.Type) u8 {
 
 fn (mut g Gen) str_format(node ast.StringInterLiteral, i int, fmts []u8) (u64, string) {
 	mut base := 0 // numeric base
-	mut upper_case := false // set upercase for the result string
+	mut upper_case := false // set uppercase for the result string
 	mut typ := g.unwrap_generic(node.expr_types[i])
 	if node.exprs[i].is_auto_deref_var() {
 		typ = typ.deref()
@@ -236,6 +236,11 @@ fn (mut g Gen) str_val(node ast.StringInterLiteral, i int, fmts []u8) {
 
 fn (mut g Gen) string_inter_literal(node ast.StringInterLiteral) {
 	// fn (mut g Gen) str_int2(node ast.StringInterLiteral) {
+	inside_casting_to_str_old := g.inside_casting_to_str
+	g.inside_casting_to_str = true
+	defer {
+		g.inside_casting_to_str = inside_casting_to_str_old
+	}
 	mut node_ := unsafe { node }
 	mut fmts := node_.fmts.clone()
 	for i, mut expr in node_.exprs {
