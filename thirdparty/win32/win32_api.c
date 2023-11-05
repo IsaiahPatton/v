@@ -13,6 +13,8 @@ static is_win32_ui = false;
 static HWND hwnd;
 static PAINTSTRUCT ps;
 
+static int text_size;
+
 HWND get_hwnd() {
 	return hwnd;
 }
@@ -22,17 +24,21 @@ HFONT my_create_font(int size) {
 				OUT_DEFAULT_PRECIS, CLIP_DFA_DISABLE, DEFAULT_QUALITY, DEFAULT_PITCH, TEXT("Arial"));
 }
 
+void win32_set_text_size(int size) {
+	text_size = size;
+}
+
 SIZE my_text_size(HDC hdc, char* text, int textLength) {
 	SIZE size;
 
 	// select a font into the device context
-	//HFONT hFont = my_create_font(16);
-	//SelectObject(hdc, hFont);
+	HFONT hFont = my_create_font(text_size);
+	SelectObject(hdc, hFont);
 
 	// get the size of the text
 	GetTextExtentPoint32(hdc, text, textLength, &size);
 	
-	//DeleteObject(hFont);
+	DeleteObject(hFont);
 
 	// the width and height of the text are in the size structure
 	return size;
@@ -254,4 +260,13 @@ void EmptyRoundRect(HDC hdc, const RECT rcTarget, const HBRUSH hbrUpper, int rad
 	HRGN hRgnUpper = CreateRoundRectRgn(rcTarget.left, rcTarget.top, rcTarget.right, rcTarget.bottom, rad, rad);	  
 	FrameRgn(hdc, hRgnUpper, hbrUpper, 1, 1);
 	DeleteObject(hRgnUpper);
+}
+
+MSG get_msg() {
+	MSG msg;
+	return msg;
+}
+
+int get_msg_msg(MSG msg) {
+	return msg.message;
 }

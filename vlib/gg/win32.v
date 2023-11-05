@@ -74,9 +74,14 @@ struct C.tagSIZE {
 	cy f32
 }
 
+[typedef]
+struct C.HDC {
+}
+
 // window c fns
 fn C.RegisterClassEx_(class &Win32WndClass) int
-fn C.CreateWindowEx(dwExStyle i64, lpClassName &u16, lpWindowName &u16, dwStyle i64, x int, y int, nWidth int, nHeight int, hWndParent i64, hMenu voidptr, h_instance voidptr, lpParam voidptr) &C.HWND
+fn C.CreateWindowEx(dwExStyle i64, lpClassName &u16, lpWindowName &u16, dwStyle i64, x int, y int, nWidth int, nHeight int, hWndParent i64, hMenu voidptr, h_instance voidptr, lpParam voidptr) C.HWND
+
 fn C.DefWindowProc(hwnd C.HWND, msg u32, wParam C.WPARAM, lParam C.LPARAM) C.LRESULT
 fn C.ShowWindow(hwnd C.HWND, num int)
 fn C.UpdateWindow(hwnd C.HWND)
@@ -91,9 +96,11 @@ fn C.GetClientRect(hwnd C.HWND, lprect &C.tagRECT)
 fn C.LoadCursor(hin C.HINSTANCE, name C.LPCSTR) C.HCURSOR
 
 // message c fns
-fn C.GetMessage(msg C.LPMSG, hwnd C.HWND, a int, b int) bool
-fn C.TranslateMessage(msg C.LPMSG)
+fn C.GetMessage(msg C.MSG, hwnd C.HWND, a int, b int) bool
+fn C.PeekMessageW(msg C.MSG, hwnd C.HWND, a int, b int, c int) bool
+fn C.TranslateMessage(msg C.MSG)
 fn C.DispatchMessage(msg C.LPMSG)
+fn C.DispatchMessageW(msg C.MSG)
 fn C.PostQuitMessage(code int)
 
 fn C.SetTimer(hwnd C.HWND, id u32, ela u32, C.TIMERPROC)
@@ -258,22 +265,31 @@ fn win32_scissor_rect(hdc C.HDC, x int, y int, w int, h int) {
 
 fn C.get_hwnd() C.HWND 
 
+fn C.win32_set_text_size(size int) 
+
 fn win32_draw_text(hdc C.HDC, text string, x int, y int, cfg gx.TextCfg) {
 	rect := &C.tagRECT{
 		left: x
 		top: y
 	}
 
-	mut dat := C.GetWindowLongPtr(C.get_hwnd(), gg.gwlp_userdata)
-	mut mydat := unsafe { &Win32Userdata(voidptr(dat)) }
-	mydat.current << DrawInstruction{
-		typ: 'txt ${text} ${x} ${y}'
-	}
+	//mut dat := C.GetWindowLongPtr(C.get_hwnd(), gg.gwlp_userdata)
+	//mut mydat := unsafe { &Win32Userdata(voidptr(dat)) }
+	//mydat.current << DrawInstruction{
+	//	typ: 'txt ${text} ${x} ${y}'
+	//}
+
+	hfont := C.my_create_font(cfg.size)
+	C.win32_set_text_size(cfg.size)
+	C.SelectObject(hdc, C.HGDIOBJ(hfont))
+	
+	w, h := win32_text_size(hdc, text)
+
+	// win32_draw_rect_empty(hdc, x, y, w, h, gx.red)
 
 	C.fix_text_background(hdc)
 	C.SetTextColor(hdc, C.RGB(cfg.color.r, cfg.color.g, cfg.color.b))
-	hfont := C.my_create_font(cfg.size)
-	C.SelectObject(hdc, C.HGDIOBJ(hfont))
+
 	C.DrawText(hdc, text.to_wide(), -1, rect, gg.dt_noclip)
 	C.DeleteObject(C.HGDIOBJ(hfont))
 }
@@ -295,7 +311,7 @@ fn to_colorref(c gx.Color) C.COLORREF {
 }
 
 // Create a new Win32 Window
-fn win32_create_window(x int, y int, w int, h int, title string) &C.HWND {
+fn win32_create_window(x int, y int, w int, h int, title string) C.HWND {
 	cw := (C.COLOR_WINDOW + 1)
 	wndclass := Win32WndClass{
 		cb_size: sizeof(Win32WndClass)
@@ -324,12 +340,26 @@ fn win32_create_window(x int, y int, w int, h int, title string) &C.HWND {
 	return hwnd
 }
 
+fn C.gdi_loop()
+
+
+fn C.get_msg() C.MSG
+
+fn C.get_msg_msg(C.MSG) int
+
 // Run the Win32 message loop
-fn win32_run_message_loop() {
-	mut msg := C.NULL
+fn (mut this Win32Userdata) win32_run_message_loop() {
+	mut msg := C.get_msg()
+	
+	
+	// C.InvalidateRect(hwnd, C.NULL, C.TRUE)
+	
+	// PeekMessageW 
+	// while (PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE)) {
+	
 	for C.GetMessage(&msg, C.NULL, 0, 0) {
 		C.TranslateMessage(&msg)
-		C.DispatchMessage(&msg)
+		C.DispatchMessageW(&msg)
 	}
 }
 
@@ -489,12 +519,12 @@ fn my_wnd_proc(hwnd C.HWND, message u32, wParam C.WPARAM, lParam C.LPARAM) C.LRE
 
 		if timerid == 1 {
 		
-			mut mydat := unsafe { &Win32Userdata(voidptr(dat)) }
+			//mut mydat := unsafe { &Win32Userdata(voidptr(dat)) }
 			
 			// val := do_draw(mydat.ctx)
 
 			//if val > 0 {
-				C.InvalidateRect(hwnd, C.NULL, C.TRUE)
+			C.InvalidateRect(hwnd, C.NULL, C.TRUE)
 			//} else {
 			//	mydat.current.clear()
 			//	gg_frame_fn(mut mydat.ctx)
@@ -556,11 +586,6 @@ fn my_wnd_proc(hwnd C.HWND, message u32, wParam C.WPARAM, lParam C.LPARAM) C.LRE
 	}
 
 	if message == gg.wm_destroy {
-		// I don't know why but with TCC we get
-		// Exception 0xC0000005 without this.
-		$if tinyc {
-			dump('bye!')
-		}
 		C.PostQuitMessage(0)
 		return C.LRESULT(0)
 	}

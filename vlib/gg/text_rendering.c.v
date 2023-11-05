@@ -125,6 +125,7 @@ pub fn (ctx &Context) set_text_cfg(cfg gx.TextCfg) {
 	}
 	$if windows {
 		if ctx.native_rendering {
+			C.win32_set_text_size(cfg.size)
 			return
 		}
 	}

@@ -491,7 +491,7 @@ pub fn new_context(cfg Config) &Context {
 pub fn (mut ctx Context) run() {
 	$if windows {
 		if ctx.native_rendering {
-			win32_run_message_loop()
+			ctx.win32.win32_run_message_loop()
 			return
 		}
 	}
