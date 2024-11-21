@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2023 Alexander Medvednikov. All rights reserved.
+// Copyright (c) 2019-2024 Alexander Medvednikov. All rights reserved.
 // Use of this source code is governed by an MIT license
 // that can be found in the LICENSE file.
 // Package md5 implements the MD5 hash algorithm as defined in RFC 1321.
@@ -10,19 +10,15 @@ module md5
 
 import encoding.binary
 
-pub const (
-	// The size of an MD5 checksum in bytes.
-	size       = 16
-	// The blocksize of MD5 in bytes.
-	block_size = 64
-)
+// The size of an MD5 checksum in bytes.
+pub const size = 16
+// The blocksize of MD5 in bytes.
+pub const block_size = 64
 
-const (
-	init0 = 0x67452301
-	init1 = u32(0xEFCDAB89)
-	init2 = u32(0x98BADCFE)
-	init3 = 0x10325476
-)
+const init0 = 0x67452301
+const init1 = u32(0xEFCDAB89)
+const init2 = u32(0x98BADCFE)
+const init3 = 0x10325476
 
 // Digest represents the partial evaluation of a checksum.
 struct Digest {
@@ -34,7 +30,7 @@ mut:
 }
 
 // free the resources taken by the Digest `d`
-[unsafe]
+@[unsafe]
 pub fn (mut d Digest) free() {
 	$if prealloc {
 		return
@@ -44,16 +40,16 @@ pub fn (mut d Digest) free() {
 
 fn (mut d Digest) init() {
 	d.s = []u32{len: (4)}
-	d.x = []u8{len: md5.block_size}
+	d.x = []u8{len: block_size}
 	d.reset()
 }
 
 // reset the state of the Digest `d`
 pub fn (mut d Digest) reset() {
-	d.s[0] = u32(md5.init0)
-	d.s[1] = u32(md5.init1)
-	d.s[2] = u32(md5.init2)
-	d.s[3] = u32(md5.init3)
+	d.s[0] = u32(init0)
+	d.s[1] = u32(init1)
+	d.s[2] = u32(init2)
+	d.s[3] = u32(init3)
 	d.nx = 0
 	d.len = 0
 }
@@ -82,7 +78,7 @@ pub fn (mut d Digest) write(p_ []u8) !int {
 		if d.nx > 0 {
 			n := copy(mut d.x[d.nx..], p)
 			d.nx += n
-			if d.nx == md5.block_size {
+			if d.nx == block_size {
 				block(mut d, d.x)
 				d.nx = 0
 			}
@@ -92,8 +88,8 @@ pub fn (mut d Digest) write(p_ []u8) !int {
 				p = p[n..]
 			}
 		}
-		if p.len >= md5.block_size {
-			n := p.len & ~(md5.block_size - 1)
+		if p.len >= block_size {
+			n := p.len & ~(block_size - 1)
 			block(mut d, p[..n])
 			if n >= p.len {
 				p = []
@@ -139,7 +135,7 @@ fn (mut d Digest) checksum_internal() []u8 {
 	if d.nx != 0 {
 		panic('d.nx != 0')
 	}
-	mut digest := []u8{len: md5.size}
+	mut digest := []u8{len: size}
 	binary.little_endian_put_u32(mut digest, d.s[0])
 	binary.little_endian_put_u32(mut digest[4..], d.s[1])
 	binary.little_endian_put_u32(mut digest[8..], d.s[2])
@@ -149,8 +145,8 @@ fn (mut d Digest) checksum_internal() []u8 {
 
 // checksum returns the byte checksum of the `Digest`,
 // it is an internal method and is not recommended because its results are not idempotent.
-[deprecated: 'checksum() will be changed to a private method, use sum() instead']
-[deprecated_after: '2024-04-30']
+@[deprecated: 'checksum() will be changed to a private method, use sum() instead']
+@[deprecated_after: '2024-04-30']
 pub fn (mut d Digest) checksum() []u8 {
 	return d.checksum_internal()
 }
@@ -170,12 +166,12 @@ fn block(mut dig Digest, p []u8) {
 
 // size returns the size of the checksum in bytes.
 pub fn (d &Digest) size() int {
-	return md5.size
+	return size
 }
 
 // block_size returns the block size of the checksum in bytes.
 pub fn (d &Digest) block_size() int {
-	return md5.block_size
+	return block_size
 }
 
 // hexhash returns a hexadecimal MD5 hash sum `string` of `s`.

@@ -1,5 +1,5 @@
 Module {
 	name:    'semver'
-	version: '0.4.2'
-    deps:    []
+	version: '0.4.8'
+	deps:    []
 }

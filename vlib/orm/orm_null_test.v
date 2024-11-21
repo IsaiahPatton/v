@@ -1,3 +1,5 @@
+// vtest flaky: true
+// vtest retry: 3
 import orm
 import db.sqlite
 
@@ -21,12 +23,12 @@ fn MockDB.new() &MockDB {
 	}
 }
 
-fn (db MockDB) @select(config orm.SelectConfig, data orm.QueryData, where orm.QueryData) ![][]orm.Primitive {
+fn (db MockDB) select(config orm.SelectConfig, data orm.QueryData, where orm.QueryData) ![][]orm.Primitive {
 	mut st := db.st
 	st.last = orm.orm_select_gen(config, '`', false, '?', 5, where)
 	st.data = data.data
 	st.where = where.data
-	return db.db.@select(config, data, where)
+	return db.db.select(config, data, where)
 }
 
 fn (db MockDB) insert(table string, data orm.QueryData) ! {
@@ -54,25 +56,23 @@ fn (db MockDB) delete(table string, where orm.QueryData) ! {
 	return db.db.delete(table, where)
 }
 
-const (
-	typ_to_typename = {
-		typeof[i8]().idx:     'i8'
-		typeof[i16]().idx:    'i16'
-		typeof[int]().idx:    'int'
-		typeof[i64]().idx:    'i64'
-		typeof[u8]().idx:     'u8'
-		typeof[u16]().idx:    'u16'
-		typeof[u32]().idx:    'u32'
-		typeof[u64]().idx:    'u64'
-		typeof[f32]().idx:    'f32'
-		typeof[f64]().idx:    'f64'
-		typeof[string]().idx: 'string'
-		typeof[bool]().idx:   'bool'
-		orm.serial:           'serial'
-		orm.time_:            'time'
-		orm.enum_:            'enum'
-	}
-)
+const typ_to_typename = {
+	typeof[i8]().idx:     'i8'
+	typeof[i16]().idx:    'i16'
+	typeof[int]().idx:    'int'
+	typeof[i64]().idx:    'i64'
+	typeof[u8]().idx:     'u8'
+	typeof[u16]().idx:    'u16'
+	typeof[u32]().idx:    'u32'
+	typeof[u64]().idx:    'u64'
+	typeof[f32]().idx:    'f32'
+	typeof[f64]().idx:    'f64'
+	typeof[string]().idx: 'string'
+	typeof[bool]().idx:   'bool'
+	orm.serial:           'serial'
+	orm.time_:            'time'
+	orm.enum_:            'enum'
+}
 
 fn mock_type_from_v(typ int) !string {
 	return if typ in typ_to_typename {
@@ -98,10 +98,10 @@ fn (db MockDB) last_id() int {
 
 // --
 
-[table: 'foo']
+@[table: 'foo']
 struct Foo {
 mut:
-	id u64    [primary; sql: serial]
+	id u64 @[primary; sql: serial]
 	a  string
 	//	b  string  [default: '"yes"']
 	c ?string
@@ -148,12 +148,12 @@ fn test_option_struct_fields_and_none() {
 	assert res1.len == 1
 	assert res1[0] == Foo{
 		id: 1
-		a: ''
-		c: none
-		d: 'hi'
-		e: 0
-		g: none
-		h: 55
+		a:  ''
+		c:  none
+		d:  'hi'
+		e:  0
+		g:  none
+		h:  55
 	}
 
 	sql db {
@@ -175,12 +175,12 @@ fn test_option_struct_fields_and_none() {
 	assert res2.len == 1
 	assert res2[0] == Foo{
 		id: 1
-		a: ''
-		c: 'yo'
-		d: none
-		e: 0
-		g: 44
-		h: none
+		a:  ''
+		c:  'yo'
+		d:  none
+		e:  0
+		g:  44
+		h:  none
 	}
 
 	assert sql db {
@@ -222,7 +222,7 @@ fn test_option_struct_fields_and_none() {
 }
 
 struct Bar {
-	id   u64     [primary; sql: serial]
+	id   u64 @[primary; sql: serial]
 	name ?string
 	age  int
 }
@@ -254,11 +254,11 @@ fn test_inserting_passed_optionals() {
 	entry1 := Bar{}
 	entry2 := Bar{
 		name: 'Alice'
-		age: 55
+		age:  55
 	}
 	entry3 := Bar{
 		name: 'Bob'
-		age: 66
+		age:  66
 	}
 	sql db {
 		create table Bar

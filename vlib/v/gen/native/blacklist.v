@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2023 Alexander Medvednikov. All rights reserved.
+// Copyright (c) 2019-2024 Alexander Medvednikov. All rights reserved.
 // Use of this source code is governed by an MIT license
 // that can be found in the LICENSE file.
 module native
@@ -19,7 +19,7 @@ already compiling functions:
 	MessageError.code
 	MessageError.free
 	u64.hex
-	VAssertMetaInfo.free"
+	VAssertMetaInfo.free
 	__new_array
 	new_array_from_c_array
 	new_array_from_c_array_no_alloc
@@ -32,6 +32,6 @@ const whitelist = {
 	'main.main': false
 }
 
-fn (g Gen) is_blacklisted(name string, is_builtin bool) bool {
-	return native.whitelist[name] or { is_builtin }
+fn (g &Gen) is_blacklisted(name string, is_builtin bool) bool {
+	return whitelist[name] or { is_builtin }
 }

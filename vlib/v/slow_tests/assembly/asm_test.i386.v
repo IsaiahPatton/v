@@ -106,7 +106,7 @@ fn test_inline_asm() {
 	manu.str()
 }
 
-[packed]
+@[packed]
 struct Manu {
 mut:
 	ebx  u32
@@ -118,8 +118,8 @@ mut:
 fn (m Manu) str() string {
 	return unsafe {
 		string{
-			str: &u8(&m)
-			len: 24
+			str:    &u8(&m)
+			len:    24
 			is_lit: 1
 		}
 	}

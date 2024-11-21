@@ -6,8 +6,13 @@ import orm
 $if $pkgconfig('libpq') {
 	#pkgconfig --cflags --libs libpq
 } $else {
-	#flag -lpq
+	$if msvc {
+		#flag -llibpq
+	} $else {
+		#flag -lpq
+	}
 	#flag linux -I/usr/include/postgresql
+	//#flag linux -Ipostgresql // cross compiling to linux
 
 	#flag darwin -I/opt/local/include/postgresql11
 	#flag darwin -L/opt/local/lib/postgresql11
@@ -21,19 +26,33 @@ $if $pkgconfig('libpq') {
 	#flag darwin -I/opt/homebrew/opt/libpq/include
 	#flag darwin -L/opt/homebrew/opt/libpq/lib
 
-	#flag windows -I @VEXEROOT/thirdparty/pg/include
+	#flag windows -I @VEXEROOT/thirdparty/pg/libpq
 	#flag windows -L @VEXEROOT/thirdparty/pg/win64
+
+	#flag freebsd -I/usr/local/include
+	#flag freebsd -L/usr/local/lib
 }
 
-// PostgreSQL Source Code
-// https://doxygen.postgresql.org/libpq-fe_8h.html
-#include <libpq-fe.h>
+$if cross_compile ? && linux {
+	#include <libpq/libpq-fe.h>
+	#include <libpq/pg_config.h>
 
-// for PG_VERSION_NUM, which is defined everywhere at least since PG 9.5
-#include <pg_config.h>
+	//#flag -lpq // libpq.a is located in LINUXROOT/lib/x86_64-linux-gnu/libpq.a
+} $else {
+	// PostgreSQL Source Code
+	// https://doxygen.postgresql.org/libpq-fe_8h.html
+	#include <libpq-fe.h>
+
+	// for PG_VERSION_NUM, which is defined everywhere at least since PG 9.5
+	#include <pg_config.h>
+}
 
 // for orm
-#include <arpa/inet.h>
+$if windows {
+	#include <winsock2.h>
+} $else {
+	#include <arpa/inet.h>
+}
 
 #include "@VMODROOT/vlib/db/pg/compatibility.h"
 
@@ -62,41 +81,41 @@ pub struct C.pg_result {}
 
 pub struct C.pg_conn {}
 
-[typedef]
+@[typedef]
 pub struct C.PGresult {}
 
-[typedef]
+@[typedef]
 pub struct C.PGconn {}
 
 pub enum ConnStatusType {
-	ok                = C.CONNECTION_OK
-	bad               = C.CONNECTION_BAD
+	ok  = C.CONNECTION_OK
+	bad = C.CONNECTION_BAD
 	// Non-blocking mode only below here
 	// The existence of these should never be relied upon - they should only be used for user feedback or similar purposes.
-	started           = C.CONNECTION_STARTED // Waiting for connection to be made.
-	made              = C.CONNECTION_MADE // Connection OK; waiting to send.
+	started           = C.CONNECTION_STARTED           // Waiting for connection to be made.
+	made              = C.CONNECTION_MADE              // Connection OK; waiting to send.
 	awaiting_response = C.CONNECTION_AWAITING_RESPONSE // Waiting for a response from the postmaster.
-	auth_ok           = C.CONNECTION_AUTH_OK // Received authentication; waiting for backend startup.
-	setenv            = C.CONNECTION_SETENV // Negotiating environment.
-	ssl_startup       = C.CONNECTION_SSL_STARTUP // Negotiating SSL.
-	needed            = C.CONNECTION_NEEDED // Internal state: connect() needed . Available in PG 8
-	check_writable    = C.CONNECTION_CHECK_WRITABLE // Check if we could make a writable connection. Available since PG 10
-	consume           = C.CONNECTION_CONSUME // Wait for any pending message and consume them. Available since PG 10
-	gss_startup       = C.CONNECTION_GSS_STARTUP // Negotiating GSSAPI; available since PG 12
+	auth_ok           = C.CONNECTION_AUTH_OK           // Received authentication; waiting for backend startup.
+	setenv            = C.CONNECTION_SETENV            // Negotiating environment.
+	ssl_startup       = C.CONNECTION_SSL_STARTUP       // Negotiating SSL.
+	needed            = C.CONNECTION_NEEDED            // Internal state: connect() needed . Available in PG 8
+	check_writable    = C.CONNECTION_CHECK_WRITABLE    // Check if we could make a writable connection. Available since PG 10
+	consume           = C.CONNECTION_CONSUME           // Wait for any pending message and consume them. Available since PG 10
+	gss_startup       = C.CONNECTION_GSS_STARTUP       // Negotiating GSSAPI; available since PG 12
 }
 
-[typedef]
+@[typedef]
 pub enum ExecStatusType {
-	empty_query    = C.PGRES_EMPTY_QUERY // empty query string was executed
-	command_ok     = C.PGRES_COMMAND_OK // a query command that doesn't return anything was executed properly by the backend
-	tuples_ok      = C.PGRES_TUPLES_OK // a query command that returns tuples was executed properly by the backend, PGresult contains the result tuples
-	copy_out       = C.PGRES_COPY_OUT // Copy Out data transfer in progress
-	copy_in        = C.PGRES_COPY_IN // Copy In data transfer in progress
-	bad_response   = C.PGRES_BAD_RESPONSE // an unexpected response was recv'd from the backend
+	empty_query    = C.PGRES_EMPTY_QUERY    // empty query string was executed
+	command_ok     = C.PGRES_COMMAND_OK     // a query command that doesn't return anything was executed properly by the backend
+	tuples_ok      = C.PGRES_TUPLES_OK      // a query command that returns tuples was executed properly by the backend, PGresult contains the result tuples
+	copy_out       = C.PGRES_COPY_OUT       // Copy Out data transfer in progress
+	copy_in        = C.PGRES_COPY_IN        // Copy In data transfer in progress
+	bad_response   = C.PGRES_BAD_RESPONSE   // an unexpected response was recv'd from the backend
 	nonfatal_error = C.PGRES_NONFATAL_ERROR // notice or warning message
-	fatal_error    = C.PGRES_FATAL_ERROR // query failed
-	copy_both      = C.PGRES_COPY_BOTH // Copy In/Out data transfer in progress
-	single_tuple   = C.PGRES_SINGLE_TUPLE // single tuple from larger resultset
+	fatal_error    = C.PGRES_FATAL_ERROR    // query failed
+	copy_both      = C.PGRES_COPY_BOTH      // Copy In/Out data transfer in progress
+	single_tuple   = C.PGRES_SINGLE_TUPLE   // single tuple from larger resultset
 }
 
 //
@@ -126,7 +145,8 @@ fn C.PQnfields(const_res &C.PGresult) int
 // const char *const *paramValues
 // const int *paramLengths
 // const int *paramFormats
-fn C.PQexecParams(conn &C.PGconn, const_command &char, nParams int, const_paramTypes &int, const_paramValues &char, const_paramLengths &int, const_paramFormats &int, resultFormat int) &C.PGresult
+fn C.PQexecParams(conn &C.PGconn, const_command &char, nParams int, const_paramTypes &int, const_paramValues &char,
+	const_paramLengths &int, const_paramFormats &int, resultFormat int) &C.PGresult
 
 fn C.PQputCopyData(conn &C.PGconn, const_buffer &char, nbytes int) int
 
@@ -186,8 +206,7 @@ fn res_to_rows(res voidptr) []Row {
 				row.vals << none
 			} else {
 				val := C.PQgetvalue(res, i, j)
-				sval := unsafe { val.vstring() }
-				row.vals << sval
+				row.vals << unsafe { cstring_to_vstring(val) }
 			}
 		}
 		rows << row

@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2021 Raúl Hernández. All rights reserved.
+// Copyright (c) 2020-2024 Raúl Hernández. All rights reserved.
 // Use of this source code is governed by an MIT license
 // that can be found in the LICENSE file.
 module ui
@@ -142,7 +142,7 @@ pub enum EventType {
 	resized
 }
 
-[flag]
+@[flag]
 pub enum Modifiers {
 	ctrl
 	shift
@@ -183,6 +183,7 @@ pub mut:
 }
 
 pub struct Config {
+pub:
 	user_data  voidptr
 	init_fn    ?fn (voidptr)
 	frame_fn   ?fn (voidptr)
@@ -204,31 +205,31 @@ pub struct Config {
 	.stop]
 }
 
-[inline]
+@[inline]
 fn (ctx &Context) init() {
 	f := ctx.cfg.init_fn or { return }
 	f(ctx.cfg.user_data)
 }
 
-[inline]
+@[inline]
 fn (ctx &Context) frame() {
 	f := ctx.cfg.frame_fn or { return }
 	f(ctx.cfg.user_data)
 }
 
-[inline]
+@[inline]
 fn (ctx &Context) cleanup() {
 	f := ctx.cfg.cleanup_fn or { return }
 	f(ctx.cfg.user_data)
 }
 
-[inline]
+@[inline]
 fn (ctx &Context) fail(error string) {
 	f := ctx.cfg.fail_fn or { return }
 	f(error)
 }
 
-[inline]
+@[inline]
 fn (ctx &Context) event(event &Event) {
 	f := ctx.cfg.event_fn or { return }
 	f(event, ctx.cfg.user_data)

@@ -88,7 +88,8 @@ fn C.getpeername(sockfd int, addr &Addr, addlen &u32) int
 
 fn C.inet_ntop(af AddrFamily, src voidptr, dst &char, dst_size int) &char
 
-fn C.WSAAddressToStringA(lpsaAddress &Addr, dwAddressLength u32, lpProtocolInfo voidptr, lpszAddressString &char, lpdwAddressStringLength &u32) int
+fn C.WSAAddressToStringA(lpsaAddress &Addr, dwAddressLength u32, lpProtocolInfo voidptr, lpszAddressString &char,
+	lpdwAddressStringLength &u32) int
 
 // fn C.getsockname(sockfd int, addr &C.sockaddr, addrlen &C.socklen_t) int
 fn C.getsockname(sockfd int, addr &C.sockaddr, addrlen &u32) int
@@ -103,7 +104,7 @@ fn C.ioctlsocket(s int, cmd int, argp &u32) int
 
 fn C.fcntl(fd int, cmd int, arg ...voidptr) int
 
-fn C.@select(ndfs int, readfds &C.fd_set, writefds &C.fd_set, exceptfds &C.fd_set, timeout &C.timeval) int
+fn C.select(ndfs int, readfds &C.fd_set, writefds &C.fd_set, exceptfds &C.fd_set, timeout &C.timeval) int
 
 fn C.FD_ZERO(fdset &C.fd_set)
 
@@ -119,5 +120,5 @@ fn C.photon_accept(int, voidptr, int, timeout u64) int
 fn C.photon_send(int, voidptr, int, int, timeout u64) int
 fn C.photon_recv(int, voidptr, int, int, timeout u64) int
 
-[typedef]
+@[typedef]
 pub struct C.fd_set {}

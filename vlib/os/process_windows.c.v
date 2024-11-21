@@ -6,7 +6,8 @@ fn C.GenerateConsoleCtrlEvent(event u32, pgid u32) bool
 fn C.GetModuleHandleA(name &char) HMODULE
 fn C.GetProcAddress(handle voidptr, procname &u8) voidptr
 fn C.TerminateProcess(process HANDLE, exit_code u32) bool
-fn C.PeekNamedPipe(hNamedPipe voidptr, lpBuffer voidptr, nBufferSize int, lpBytesRead voidptr, lpTotalBytesAvail voidptr, lpBytesLeftThisMessage voidptr) bool
+fn C.PeekNamedPipe(hNamedPipe voidptr, lpBuffer voidptr, nBufferSize int, lpBytesRead voidptr, lpTotalBytesAvail voidptr,
+	lpBytesLeftThisMessage voidptr) bool
 
 type FN_NTSuspendResume = fn (voidptr) u64
 
@@ -49,15 +50,15 @@ pub mut:
 	proc_info    ProcessInformation
 	command_line [65536]u8
 	child_stdin  &u32 = unsafe { nil }
-	//
+
 	child_stdout_read  &u32 = unsafe { nil }
 	child_stdout_write &u32 = unsafe { nil }
-	//
+
 	child_stderr_read  &u32 = unsafe { nil }
 	child_stderr_write &u32 = unsafe { nil }
 }
 
-[manualfree]
+@[manualfree]
 fn (mut p Process) win_spawn_process() int {
 	mut to_be_freed := []voidptr{cap: 5}
 	defer {
@@ -68,19 +69,19 @@ fn (mut p Process) win_spawn_process() int {
 	}
 	p.filename = abs_path(p.filename) // expand the path to an absolute one, in case we later change the working folder
 	mut wdata := &WProcess{
-		child_stdin: 0
-		child_stdout_read: 0
-		child_stdout_write: 0
-		child_stderr_read: 0
-		child_stderr_write: 0
+		child_stdin:        unsafe { nil }
+		child_stdout_read:  unsafe { nil }
+		child_stdout_write: unsafe { nil }
+		child_stderr_read:  unsafe { nil }
+		child_stderr_write: unsafe { nil }
 	}
 	p.wdata = voidptr(wdata)
 	mut start_info := StartupInfo{
-		lp_reserved2: 0
-		lp_reserved: 0
-		lp_desktop: 0
-		lp_title: 0
-		cb: sizeof(C.PROCESS_INFORMATION)
+		lp_reserved2: unsafe { nil }
+		lp_reserved:  unsafe { nil }
+		lp_desktop:   unsafe { nil }
+		lp_title:     unsafe { nil }
+		cb:           sizeof(StartupInfo)
 	}
 	if p.use_stdio_ctl {
 		mut sa := SecurityAttributes{}
@@ -157,6 +158,10 @@ fn (mut p Process) win_kill_process() {
 	C.TerminateProcess(wdata.proc_info.h_process, 3)
 }
 
+fn (mut p Process) win_term_process() {
+	p.win_kill_process()
+}
+
 fn (mut p Process) win_kill_pgroup() {
 	wdata := unsafe { &WProcess(p.wdata) }
 	C.GenerateConsoleCtrlEvent(C.CTRL_BREAK_EVENT, wdata.proc_info.dw_process_id)
@@ -192,11 +197,11 @@ fn (mut p Process) win_is_alive() bool {
 
 ///////////////
 
-fn (mut p Process) win_write_string(idx int, s string) {
+fn (mut p Process) win_write_string(idx int, _s string) {
 	panic('Process.write_string ${idx} is not implemented yet')
 }
 
-fn (mut p Process) win_read_string(idx int, maxbytes int) (string, int) {
+fn (mut p Process) win_read_string(idx int, _maxbytes int) (string, int) {
 	mut wdata := unsafe { &WProcess(p.wdata) }
 	if unsafe { wdata == 0 } {
 		return '', 0
@@ -277,6 +282,9 @@ fn (mut p Process) unix_stop_process() {
 }
 
 fn (mut p Process) unix_resume_process() {
+}
+
+fn (mut p Process) unix_term_process() {
 }
 
 fn (mut p Process) unix_kill_process() {

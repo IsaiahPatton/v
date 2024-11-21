@@ -2,12 +2,16 @@ module picoev
 
 #include <sys/epoll.h>
 
-fn C.epoll_create(int) int
-fn C.epoll_wait(int, voidptr, int, int) int
-fn C.epoll_ctl(int, int, int, voidptr) int
+$if !musl ? {
+	#include <sys/cdefs.h> // needed for cross compiling to linux
+}
 
-[typedef]
-pub union C.epoll_data_t {
+fn C.epoll_create(__flags int) int
+fn C.epoll_wait(__epfd int, __events &C.epoll_event, __maxevents int, __timeout int) int
+fn C.epoll_ctl(__epfd int, __op int, __fd int, __event &C.epoll_event) int
+
+@[typedef]
+union C.epoll_data {
 mut:
 	ptr voidptr
 	fd  int
@@ -15,14 +19,13 @@ mut:
 	u64 u64
 }
 
-[packed]
+@[packed]
 pub struct C.epoll_event {
-mut:
 	events u32
-	data   C.epoll_data_t
+	data   C.epoll_data
 }
 
-[heap]
+@[heap]
 pub struct EpollLoop {
 mut:
 	id       int
@@ -48,7 +51,7 @@ pub fn create_epoll_loop(id int) !&EpollLoop {
 	return loop
 }
 
-[direct_array_access]
+@[direct_array_access]
 fn (mut pv Picoev) update_events(fd int, events int) int {
 	// check if fd is in range
 	assert fd < max_fds
@@ -100,9 +103,9 @@ fn (mut pv Picoev) update_events(fd int, events int) int {
 	return 0
 }
 
-[direct_array_access]
-fn (mut pv Picoev) poll_once(max_wait int) int {
-	nevents := C.epoll_wait(pv.loop.epoll_fd, &pv.loop.events, max_fds, max_wait * 1000)
+@[direct_array_access]
+fn (mut pv Picoev) poll_once(max_wait_in_sec int) int {
+	nevents := C.epoll_wait(pv.loop.epoll_fd, &pv.loop.events[0], max_fds, max_wait_in_sec * 1000)
 
 	if nevents == -1 {
 		// timeout has occurred
@@ -116,13 +119,14 @@ fn (mut pv Picoev) poll_once(max_wait int) int {
 			assert event.data.fd < max_fds
 		}
 		if pv.loop.id == target.loop_id && target.events & picoev_readwrite != 0 {
-			// vfmt off
-			read_events := (
-				(if event.events & u32(C.EPOLLIN) != 0 { picoev_read } else { 0 })
-					|
-				(if event.events & u32(C.EPOLLOUT) != 0 { picoev_write } else { 0 })
-			)
-			// vfmt on
+			mut read_events := 0
+			if event.events & u32(C.EPOLLIN) != 0 {
+				read_events |= picoev_read
+			}
+			if event.events & u32(C.EPOLLOUT) != 0 {
+				read_events |= picoev_write
+			}
+
 			if read_events != 0 {
 				// do callback!
 				unsafe { target.cb(event.data.fd, read_events, &pv) }

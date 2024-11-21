@@ -1,3 +1,43 @@
+## How to help and contribute to the V project
+
+The tasks in the lists below are ordered in terms of easiness/time/nerves
+investment.
+
+### Starting tasks
+
+1. Read the [language documentation](https://docs.vlang.io/introduction.html) and [standard module documentation](https://modules.vlang.io/).
+
+2. Fix doc errors and places you found unclear, and make [PRs](https://github.com/vlang/v/pulls) about it.
+
+3. Make V programs, in the areas that you are interested in, or help others make
+   V programs. If the programs/libraries are public, post them to the channel
+   `#showcase-discussion` on [Discord](https://discord.gg/vlang) and/or to
+   [awesome-v](https://github.com/vlang/awesome-v). You can also answer other
+   people's questions in Discord channels `#help` or `#v-chat`, or in
+   [github's discussions page](https://github.com/vlang/v/discussions).
+
+4. Read the new issues in the tracker.
+
+5. Try to reproduce them on your system, and comment in the issues, with the
+   results.
+
+6. Read the PRs, try to spot errors in them, and comment about them.
+
+### Medium tasks (after gathering experience with 1..6)
+
+7. Make PRs, with bug fixes to existing issues (found doing 1..6).
+
+8. Suggest new features, tools, or modifications to the existing ones here,
+   based on the experience, that you gathered doing 1..7.
+
+9. Make PRs with implementations of your suggestions, or based on other people's
+   suggestions, based on 1..7 and the feedback from 8.
+
+### Advanced tasks (after doing 1..9 for a while)
+
+10. Work on [V RFCs](https://github.com/vlang/rfcs/) (submitting new ones,
+    providing feedback to existing ones, implementing them).
+
 ## Code Structure
 
 I tried to make the code of the compiler and vlib as simple and readable as
@@ -83,7 +123,7 @@ accordingly in the steps below.)
    Let's say that the forked repository is at
    `https://github.com/YOUR_GITHUB_USERNAME/v` .
 2. Clone the main v repository https://github.com/vlang/v to a local folder on
-   your computer, say named nv/ (`git clone https://github.com/vlang/v nv`)
+   your computer, say named nv/ (`git clone --depth=1 https://github.com/vlang/v nv`)
 3. `cd nv`
    3.1 (optional) Run these commands, which ensure that all your code will be
    automatically formatted, before committing:
@@ -102,6 +142,8 @@ accordingly in the steps below.)
    `git checkout -b fix_alabala`
    - Don't forget to keep formatting standards, run `v fmt -w YOUR_MODIFIED_FILES`
      before committing (if you have not run the commands from 3.1)
+   - If you changed Markdown (`.md`) files, check them `v check-md YOUR_MODIFIED_FILES`
+     before committing.
 6. `git push pullrequest` Note: The `pullrequest` remote was setup on step 4
 
 7. On GitHub's web interface, go to: https://github.com/vlang/v/pulls
@@ -199,7 +241,7 @@ You can download the `hub` tool from https://hub.github.com/ . Using
 to make PRs. Most remote operations can be done through the `hub` CLI
 command.
 
-> **Note**
+> [!NOTE]
 > You still need to have a GitHub account.
 
 ### Preparation:
@@ -273,7 +315,6 @@ a copy of the compiler rather than replacing it with `v self`.
 
 | Flag                              | Usage                                                                                                               |
 |-----------------------------------|---------------------------------------------------------------------------------------------------------------------|
-| `debugscanner`                    | Prints debug information during the scanning phase                                                                  |
 | `debug_codegen`                   | Prints automatically generated V code during the scanning phase                                                     |
 | `debug_interface_table`           | Prints generated interfaces during C generation                                                                     |
 | `debug_interface_type_implements` | Prints debug information when checking that a type implements in interface                                          |
@@ -281,12 +322,14 @@ a copy of the compiler rather than replacing it with `v self`.
 | `time_checking`                   | Prints the time spent checking files and other related information                                                  |
 | `time_parsing`                    | Prints the time spent parsing files and other related information                                                   |
 |                                   |                                                                                                                     |
+| `trace_scanner`                   | Prints details about the recognized tokens. *Very* verbose. Use `./vnew -no-builtin -check-syntax file.v` later.    |
 | `trace_parser`                    | Prints details about parsed statements and expressions. Very verbose. Use it for panics in the parser.              |
-| `trace_ccoptions`                 | Prints options passed down to the C compiler                                                                        |
-|                                   |                                                                                                                     |
 | `trace_checker`                   | Prints details about the statements being checked. Very verbose. Use it for panics in the checker.                  |
+| `trace_transformer`               | Prints details about the statements being transformed. Very verbose. Use it for panics in the transformer stage.    |
 |                                   |                                                                                                                     |
 | `trace_gen`                       | Prints all the strings written to the generated C file. Very verbose.                                               |
+| `trace_gen_wanted_value`          | Prints a backtrace, when a specific *wanted* value, is part of what is printed in the generated C file.             |
+|                                   |        Use: `v -g -o vgen -d trace_gen_wanted -d trace_gen_wanted_value="message = _SLIT0" cmd/v && ./vgen bug.v`   |
 | `trace_cgen_stmt`                 | Prints details about the statements that are being processed by cgen.                                               |
 |                                   |        Use it for panics in cgen, to see the closest input V source line, that caused the panic.                    |
 |                                   |        Note: you need `v -no-parallel -d trace_cgen_stmt -o w cmd/v` to make sense of the output of that,           |
@@ -295,7 +338,10 @@ a copy of the compiler rather than replacing it with `v self`.
 | `trace_autofree`                  | Prints details about how/when -autofree puts free() calls                                                           |
 | `trace_autostr`                   | Prints details about `.str()` method auto-generated by the compiler during C generation                             |
 |                                   |                                                                                                                     |
+| `trace_ccoptions`                 | Prints options passed down to the C compiler                                                                        |
+|                                   |                                                                                                                     |
 | `trace_thirdparty_obj_files`      | Prints details about built thirdparty obj files                                                                     |
 | `trace_usecache`                  | Prints details when -usecache is used                                                                               |
 | `trace_embed_file`                | Prints details when $embed_file is used                                                                             |
 | `embed_only_metadata`             | Embed only the metadata for the file(s) with `$embed_file('somefile')`; faster; for development, *not* distribution |
+|-----------------------------------|---------------------------------------------------------------------------------------------------------------------|

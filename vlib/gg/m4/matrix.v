@@ -41,12 +41,12 @@ pub fn (x Mat4) str() string {
 }
 
 // Remove all the raw zeros
-[direct_array_access]
+@[direct_array_access]
 pub fn (a Mat4) clean() Mat4 {
 	unsafe {
 		x := Mat4{}
 		for c, value in a.e {
-			if f32_abs(value) < m4.precision {
+			if f32_abs(value) < precision {
 				x.e[c] = 0
 			} else {
 				x.e[c] = value
@@ -66,11 +66,11 @@ pub fn (x Mat4) sum_all() f32 {
 }
 
 // Check if two matrix are equal using module precision
-[direct_array_access]
+@[direct_array_access]
 pub fn (x Mat4) is_equal(y Mat4) bool {
 	unsafe {
 		for c, value in x.e {
-			if f32_abs(value - y.e[c]) > m4.precision {
+			if f32_abs(value - y.e[c]) > precision {
 				return false
 			}
 		}
@@ -162,7 +162,7 @@ pub fn (mut x Mat4) set_f32(value f32) {
 // Rows/Column access
 //-------------------------------------
 // Set the row as the input vec4
-[direct_array_access; unsafe]
+@[direct_array_access; unsafe]
 pub fn (mut x Mat4) set_row(row int, v3 Vec4) {
 	unsafe {
 		x.e[row * 4 + 0] = v3.e[0]
@@ -173,7 +173,7 @@ pub fn (mut x Mat4) set_row(row int, v3 Vec4) {
 }
 
 // Get a row from a matrix
-[direct_array_access; unsafe]
+@[direct_array_access; unsafe]
 pub fn (x Mat4) get_row(row int) Vec4 {
 	unsafe {
 		// vfmt off
@@ -183,7 +183,7 @@ pub fn (x Mat4) get_row(row int) Vec4 {
 }
 
 // Set the column as the input vec4
-[direct_array_access; unsafe]
+@[direct_array_access; unsafe]
 pub fn (mut x Mat4) set_col(col int, v3 Vec4) {
 	unsafe {
 		// vfmt off
@@ -196,7 +196,7 @@ pub fn (mut x Mat4) set_col(col int, v3 Vec4) {
 }
 
 // Get a column from a matrix
-[direct_array_access; unsafe]
+@[direct_array_access; unsafe]
 pub fn (x Mat4) get_col(col int) Vec4 {
 	unsafe {
 		// vfmt off
@@ -206,7 +206,7 @@ pub fn (x Mat4) get_col(col int) Vec4 {
 }
 
 // Swap two columns in the matrix
-[direct_array_access; unsafe]
+@[direct_array_access; unsafe]
 pub fn (mut x Mat4) swap_col(col1 int, col2 int) {
 	unsafe {
 		// vfmt off
@@ -229,7 +229,7 @@ pub fn (mut x Mat4) swap_col(col1 int, col2 int) {
 }
 
 // Swap two rows in the matrix
-[direct_array_access; unsafe]
+@[direct_array_access; unsafe]
 pub fn (mut x Mat4) swap_row(row1 int, row2 int) {
 	unsafe {
 		v0 := x.e[row1 * 4 + 0]

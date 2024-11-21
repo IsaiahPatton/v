@@ -194,17 +194,18 @@ Paraphrased from "man 2 waitid" on Linux
 		CLD_CONTINUED (child continued by SIGCONT).
 */
 
-const (
-	wp_sys_wnohang     = u64(0x00000001)
-	wp_sys_wuntraced   = u64(0x00000002)
-	wp_sys_wstopped    = u64(0x00000002)
-	wp_sys_wexited     = u64(0x00000004)
-	wp_sys_wcontinued  = u64(0x00000008)
-	wp_sys_wnowait     = u64(0x01000000) // don't reap, just poll status.
-	wp_sys___wnothread = u64(0x20000000) // don't wait on children of other threads in this group
-	wp_sys___wall      = u64(0x40000000) // wait on all children, regardless of type
-	wp_sys___wclone    = u64(0x80000000) // wait only on non-sigchld children
-)
+const wp_sys_wnohang = u64(0x00000001)
+const wp_sys_wuntraced = u64(0x00000002)
+const wp_sys_wstopped = u64(0x00000002)
+const wp_sys_wexited = u64(0x00000004)
+const wp_sys_wcontinued = u64(0x00000008)
+const wp_sys_wnowait = u64(0x01000000) // don't reap, just poll status.
+
+const wp_sys___wnothread = u64(0x20000000) // don't wait on children of other threads in this group
+
+const wp_sys___wall = u64(0x40000000) // wait on all children, regardless of type
+
+const wp_sys___wclone = u64(0x80000000)
 
 // First argument to waitid:
 enum WiWhich {
@@ -306,11 +307,11 @@ fn sys_dup2(oldfd int, newfd int) (i64, Errno) {
 
 // 59  sys_execve
 fn sys_execve(filename &u8, argv []&u8, envp []&u8) int {
-	return int(sys_call3(59, u64(filename), argv.data, envp.data))
+	return int(sys_call3(59, u64(filename), u64(argv.data), u64(envp.data)))
 }
 
 // 60 sys_exit
-[noreturn]
+@[noreturn]
 fn sys_exit(ec int) {
 	sys_call1(60, u64(ec))
 	for {}

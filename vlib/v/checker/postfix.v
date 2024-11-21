@@ -13,26 +13,26 @@ fn (mut c Checker) postfix_expr(mut node ast.PostfixExpr) ast.Type {
 		} else {
 			'decrement', '-'
 		}
-
 		c.add_error_detail('try rewrite this as `${node.expr} ${bin_op_alt} 1`')
 		c.error('cannot ${op_kind} `${node.expr}` because it is non lvalue expression',
 			node.expr.pos())
 	}
-
-	if !c.inside_unsafe && is_non_void_pointer && !node.expr.is_auto_deref_var() {
-		c.warn('pointer arithmetic is only allowed in `unsafe` blocks', node.pos)
+	if node.op != .question && !c.inside_unsafe && is_non_void_pointer
+		&& !node.expr.is_auto_deref_var() {
+		if !c.pref.translated && !c.file.is_translated {
+			c.warn('pointer arithmetic is only allowed in `unsafe` blocks', node.pos)
+		}
 	}
 	if !(typ_sym.is_number() || ((c.inside_unsafe || c.pref.translated) && is_non_void_pointer)) {
-		if c.inside_comptime_for_field {
-			if c.is_comptime_var(node.expr) || node.expr is ast.ComptimeSelector {
-				node.typ = c.unwrap_generic(c.get_comptime_var_type(node.expr))
+		if c.comptime.comptime_for_field_var != '' {
+			if c.comptime.is_comptime_var(node.expr) || node.expr is ast.ComptimeSelector {
+				node.typ = c.unwrap_generic(c.comptime.get_type(node.expr))
 				if node.op == .question {
 					node.typ = node.typ.clear_flag(.option)
 				}
 				return node.typ
 			}
 		}
-
 		typ_str := c.table.type_to_str(typ)
 		c.error('invalid operation: ${node.op.str()} (non-numeric type `${typ_str}`)',
 			node.pos)

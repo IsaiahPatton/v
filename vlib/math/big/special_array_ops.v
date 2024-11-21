@@ -3,7 +3,7 @@ module big
 import math.bits
 import strings
 
-[direct_array_access; inline]
+@[direct_array_access; inline]
 fn shrink_tail_zeros(mut a []u32) {
 	mut alen := a.len
 	for alen > 0 && a[alen - 1] == 0 {
@@ -17,7 +17,7 @@ fn shrink_tail_zeros(mut a []u32) {
 // suppose operand_a bigger than operand_b and both not null.
 // Both quotient and remaider are already allocated but of length 0
 fn newton_divide_array_by_array(operand_a []u32, operand_b []u32, mut quotient []u32, mut remainder []u32) {
-	// tranform back to Integers (on the stack without allocation)
+	// transform back to Integers (on the stack without allocation)
 	a := Integer{
 		signum: 1
 		digits: operand_a
@@ -61,13 +61,13 @@ fn newton_divide_array_by_array(operand_a []u32, operand_b []u32, mut quotient [
 }
 
 // bit_length returns the number of bits needed to represent the absolute value of the integer a.
-[deprecated: 'use a.bit_len() instead']
-[inline]
+@[deprecated: 'use a.bit_len() instead']
+@[inline]
 pub fn bit_length(a Integer) int {
 	return a.digits.len * 32 - bits.leading_zeros_32(a.digits.last())
 }
 
-[direct_array_access; inline]
+@[direct_array_access; inline]
 fn debug_u32_str(a []u32) string {
 	mut sb := strings.new_builder(30)
 	sb.write_string('[')
@@ -83,7 +83,7 @@ fn debug_u32_str(a []u32) string {
 	return sb.str()
 }
 
-[direct_array_access; inline]
+@[direct_array_access; inline]
 fn found_multiplication_base_case(operand_a []u32, operand_b []u32, mut storage []u32) bool {
 	// base case necessary to end recursion
 	if operand_a.len == 0 || operand_b.len == 0 {
@@ -106,7 +106,7 @@ fn found_multiplication_base_case(operand_a []u32, operand_b []u32, mut storage 
 // karatsuba algorithm for multiplication
 // possible optimisations:
 // - transform one or all the recurrences in loops
-[direct_array_access]
+@[direct_array_access]
 fn karatsuba_multiply_digit_array(operand_a []u32, operand_b []u32, mut storage []u32) {
 	if found_multiplication_base_case(operand_a, operand_b, mut storage) {
 		return
@@ -114,8 +114,8 @@ fn karatsuba_multiply_digit_array(operand_a []u32, operand_b []u32, mut storage 
 
 	// thanks to the base cases we can pass zero-length arrays to the mult func
 	half := imax(operand_a.len, operand_b.len) / 2
-	a_l := operand_a[0..half]
-	a_h := operand_a[half..]
+	a_l := unsafe { operand_a[0..half] }
+	a_h := unsafe { operand_a[half..] }
 	mut b_l := []u32{}
 	mut b_h := []u32{}
 	if half <= operand_b.len {
@@ -151,7 +151,7 @@ fn karatsuba_multiply_digit_array(operand_a []u32, operand_b []u32, mut storage 
 	shrink_tail_zeros(mut storage)
 }
 
-[direct_array_access]
+@[direct_array_access]
 fn toom3_multiply_digit_array(operand_a []u32, operand_b []u32, mut storage []u32) {
 	if found_multiplication_base_case(operand_a, operand_b, mut storage) {
 		return
@@ -169,15 +169,15 @@ fn toom3_multiply_digit_array(operand_a []u32, operand_b []u32, mut storage []u3
 
 	// Slices of a and b
 	a0 := Integer{
-		digits: operand_a[0..k]
+		digits: unsafe { operand_a[0..k] }
 		signum: 1
 	}
 	a1 := Integer{
-		digits: operand_a[k..k2]
+		digits: unsafe { operand_a[k..k2] }
 		signum: 1
 	}
 	a2 := Integer{
-		digits: operand_a[k2..]
+		digits: unsafe { operand_a[k2..] }
 		signum: 1
 	}
 
@@ -245,7 +245,7 @@ fn toom3_multiply_digit_array(operand_a []u32, operand_b []u32, mut storage []u3
 	storage = result.digits.clone()
 }
 
-[inline]
+@[inline]
 fn pow2(k int) Integer {
 	mut ret := []u32{len: (k >> 5) + 1}
 	bit_set(mut ret, k)
@@ -256,36 +256,29 @@ fn pow2(k int) Integer {
 }
 
 // optimized left shift in place. amount must be positive
-[direct_array_access]
 fn left_shift_digits_in_place(mut a []u32, amount int) {
-	a_len := a.len
-	// control or allocate capacity
-	for _ in a_len .. a_len + amount {
-		a << u32(0)
-	}
-	for index := a_len - 1; index >= 0; index-- {
-		a[index + amount] = a[index]
-	}
-	for index in 0 .. amount {
-		a[index] = u32(0)
+	// this is actual in builtin/array.v, prepend_many (private fn)
+	// x := []u32{ len : amount }
+	// a.prepend_many(&x[0], amount)
+	old_len := a.len
+	elem_size := a.element_size
+	unsafe {
+		a.grow_len(amount)
+		sptr := &u8(a.data)
+		dptr := &u8(a.data) + u64(amount) * u64(elem_size)
+		vmemmove(dptr, sptr, u64(old_len) * u64(elem_size))
+		vmemset(sptr, 0, u64(amount) * u64(elem_size))
 	}
 }
 
 // optimized right shift in place. amount must be positive
-[direct_array_access]
 fn right_shift_digits_in_place(mut a []u32, amount int) {
-	for index := 0; index < a.len - amount; index++ {
-		a[index] = a[index + amount]
-	}
-	for index := a.len - amount; index < a.len; index++ {
-		a[index] = u32(0)
-	}
-	shrink_tail_zeros(mut a)
+	a.drop(amount)
 }
 
 // operand b can be greater than operand a
 // the capacity of both array is supposed to be sufficient
-[direct_array_access; inline]
+@[direct_array_access; inline]
 fn add_in_place(mut a []u32, b []u32) {
 	len_a := a.len
 	len_b := b.len
@@ -313,7 +306,7 @@ fn add_in_place(mut a []u32, b []u32) {
 }
 
 // a := a - b supposed a >= b
-[direct_array_access]
+@[direct_array_access]
 fn subtract_in_place(mut a []u32, b []u32) {
 	len_a := a.len
 	len_b := b.len

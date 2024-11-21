@@ -1,28 +1,26 @@
-// Copyright (c) 2019-2023 Alexander Medvednikov. All rights reserved.
+// Copyright (c) 2019-2024 Alexander Medvednikov. All rights reserved.
 // Use of this source code is governed by an MIT license
 // that can be found in the LICENSE file.
 module native
 
-const (
-	s_attr_some_instructions = 0x0400
-	s_attr_pure_instructions = u32(0x80000000)
-	s_attr_ext_reloc         = 0x0200
-	s_attr_loc_reloc         = 0x0100
-	macho_symcmd_size        = 0x18
-	macho_d_size             = 0x50
-	mh_object                = 1
-	mh_execute               = 2
-	lc_dyld_chained_fixups   = u32(0x80000034)
-	lc_dyld_exports_trie     = u32(0x80000033)
-	lc_dyld_info_only        = u32(0x80000022)
-	lc_dysymtab              = 0xb
-	lc_load_dylib            = 0xc
-	lc_load_dylinker         = 0xe
-	lc_main                  = u32(0x80000028)
-	lc_segment_64            = 0x19
-	lc_symtab                = 0x2
-	base_addr                = i64(0x1_0000_0000)
-)
+const s_attr_some_instructions = 0x0400
+const s_attr_pure_instructions = u32(0x80000000)
+const s_attr_ext_reloc = 0x0200
+const s_attr_loc_reloc = 0x0100
+const macho_symcmd_size = 0x18
+const macho_d_size = 0x50
+const mh_object = 1
+const mh_execute = 2
+const lc_dyld_chained_fixups = u32(0x80000034)
+const lc_dyld_exports_trie = u32(0x80000033)
+const lc_dyld_info_only = u32(0x80000022)
+const lc_dysymtab = 0xb
+const lc_load_dylib = 0xc
+const lc_load_dylinker = 0xe
+const lc_main = u32(0x80000028)
+const lc_segment_64 = 0x19
+const lc_symtab = 0x2
+const base_addr = i64(0x1_0000_0000)
 
 struct Symbol {
 	str_entry  i32
@@ -44,13 +42,13 @@ struct Reloc {
 }
 
 fn (mut g Gen) macho_segment64_pagezero() {
-	g.macho_add_loadcommand(native.lc_segment_64, 72)
+	g.macho_add_loadcommand(lc_segment_64, 72)
 	g.write_string_with_padding('__PAGEZERO', 16) // section name
 	g.write64(0) // vmaddr
 	if g.pref.arch == .amd64 {
 		g.write64(i64(g.get_pagesize())) // vmsize
 	} else {
-		g.write64(native.base_addr) // vmsize
+		g.write64(base_addr) // vmsize
 	}
 	g.write64(0) // fileoff
 	g.write64(0) // filesize
@@ -74,17 +72,17 @@ fn (mut g Gen) macho_patch_header() {
 
 // probably unnecessary
 fn (mut g Gen) macho_chained_fixups() {
-	g.macho_add_loadcommand(native.lc_dyld_chained_fixups, 16)
+	g.macho_add_loadcommand(lc_dyld_chained_fixups, 16)
 	g.write32(0x4000) // dataoff
 	g.write32(56) // datasize
 
-	g.macho_add_loadcommand(native.lc_dyld_exports_trie, 16)
+	g.macho_add_loadcommand(lc_dyld_exports_trie, 16)
 	g.write32(0x4000) // dataoff
 	g.write32(56) // datasize
 }
 
 fn (mut g Gen) macho_segment64_linkedit() {
-	g.macho_add_loadcommand(native.lc_segment_64, 0x48)
+	g.macho_add_loadcommand(lc_segment_64, 0x48)
 	g.write_string_with_padding('__LINKEDIT', 16)
 
 	if g.pref.arch == .amd64 {
@@ -114,7 +112,7 @@ fn (mut g Gen) macho_header(ncmds i32, bintype i32) i32 {
 		g.write32(0x01000007) // CPU_TYPE_X64
 		g.write32(0x80000003) // CPU_SUBTYPE_X64
 	}
-	g.write32(native.mh_execute) // filetype
+	g.write32(mh_execute) // filetype
 	g.write32(ncmds) // ncmds
 
 	cmdsize_offset := i32(g.buf.len)
@@ -131,9 +129,9 @@ fn (mut g Gen) macho_header(ncmds i32, bintype i32) i32 {
 
 fn (mut g Gen) macho_segment64_text() []i32 {
 	mut patch := []i32{}
-	g.macho_add_loadcommand(native.lc_segment_64, 152)
+	g.macho_add_loadcommand(lc_segment_64, 152)
 	g.write_string_with_padding('__TEXT', 16) // section name
-	g.write64(native.base_addr) // vmaddr
+	g.write64(base_addr) // vmaddr
 
 	g.write64(i64(g.get_pagesize()) * 2) // vmsize
 	g.write64(0) // fileoff
@@ -147,12 +145,12 @@ fn (mut g Gen) macho_segment64_text() []i32 {
 	g.write_string_with_padding('__text', 16) // section name
 	g.write_string_with_padding('__TEXT', 16) // segment name
 	if g.pref.arch == .arm64 {
-		g.write64(native.base_addr + i64(g.get_pagesize())) // vmaddr
+		g.write64(base_addr + i64(g.get_pagesize())) // vmaddr
 		g.write64(0) // vmsize
 		g.write32(0) // offset
 		g.write32(4) // align
 	} else {
-		g.write64(native.base_addr + i64(g.get_pagesize())) // vmaddr
+		g.write64(base_addr + i64(g.get_pagesize())) // vmaddr
 		patch << i32(g.buf.len)
 		g.write64(0) // vmsize
 		g.write32(g.get_pagesize()) // offset
@@ -176,7 +174,7 @@ fn (mut g Gen) macho_segment64_text() []i32 {
 
 fn (mut g Gen) macho_symtab() {
 	if g.pref.arch == .arm64 {
-		g.macho_add_loadcommand(native.lc_dyld_info_only, 48)
+		g.macho_add_loadcommand(lc_dyld_info_only, 48)
 		g.write32(0) // rebase_off
 		g.write32(0) // rebase_size
 		g.write32(0) // bind_off
@@ -189,13 +187,13 @@ fn (mut g Gen) macho_symtab() {
 		g.write32(56) // export_size
 	}
 
-	g.macho_add_loadcommand(native.lc_symtab, 24)
+	g.macho_add_loadcommand(lc_symtab, 24)
 	g.write32(0x1000) // symoff
 	g.write32(0) // nsyms
 	g.write32(0x1000) // stroff
 	g.write32(0) // strsize
 
-	g.macho_add_loadcommand(native.lc_dysymtab, 0x50)
+	g.macho_add_loadcommand(lc_dysymtab, 0x50)
 	g.write32(0) // ilocalsym
 	g.write32(0) // nlocalsym
 	g.write32(0) // iextdefsym
@@ -217,12 +215,12 @@ fn (mut g Gen) macho_symtab() {
 }
 
 fn (mut g Gen) macho_dylibs() {
-	g.macho_add_loadcommand(native.lc_load_dylinker, 32)
+	g.macho_add_loadcommand(lc_load_dylinker, 32)
 	g.write32(12) // offset
 	g.write_string_with_padding('/usr/lib/dyld', 16)
 	g.write32(0) // padding // can be removed
 
-	g.macho_add_loadcommand(native.lc_load_dylib, 56)
+	g.macho_add_loadcommand(lc_load_dylib, 56)
 	g.write32(24) // offset
 	g.write32(0) // ts
 	// g.write32(0x051f6403) // g.write32(1) // current version
@@ -232,7 +230,7 @@ fn (mut g Gen) macho_dylibs() {
 }
 
 fn (mut g Gen) macho_main(addr i32) {
-	g.macho_add_loadcommand(native.lc_main, 24)
+	g.macho_add_loadcommand(lc_main, 24)
 	g.write32(addr) // entrypoint
 	g.write32(0) // initial_stacksize
 }
@@ -242,7 +240,7 @@ pub fn (mut g Gen) generate_macho_header() {
 	g.code_start_pos = i64(pagesize)
 	g.debug_pos = pagesize
 	ncmds := i32(0) // 9+ 2 -2 -3 -1
-	cmdsize_offset := g.macho_header(ncmds, native.mh_execute)
+	cmdsize_offset := g.macho_header(ncmds, mh_execute)
 	g.macho_segment64_pagezero()
 
 	g.size_pos = g.macho_segment64_text()
@@ -283,7 +281,7 @@ pub fn (mut g Gen) generate_macho_object_header() {
 		g.write32(0x01000007) // CPU_TYPE_X64
 		g.write32(3) // CPU_SUBTYPE_X64
 	}
-	g.write32(native.mh_object) // MH_OBJECT
+	g.write32(mh_object) // MH_OBJECT
 	text_offset := i32(0x138)
 	g.write32(4) // # of load commands
 	g.write32(text_offset - 0x20) // size of load commands // 0x138-0x20
@@ -315,7 +313,7 @@ pub fn (mut g Gen) generate_macho_object_header() {
 	}
 	g.write32(0x160) // relocation offset
 	g.write32(0x1) // # of relocations
-	g.write32(i32(native.s_attr_some_instructions | native.s_attr_pure_instructions))
+	g.write32(i32(s_attr_some_instructions | s_attr_pure_instructions))
 	g.write32(0)
 	g.write32(0)
 	g.write32(0)
@@ -328,8 +326,8 @@ pub fn (mut g Gen) generate_macho_object_header() {
 	g.write32(0)
 	// lc_symtab
 	g.sym_table_command()
-	//
-	g.macho_add_loadcommand(native.lc_dysymtab, native.macho_d_size)
+
+	g.macho_add_loadcommand(lc_dysymtab, macho_d_size)
 	g.write32(0)
 	g.write32(2)
 	g.write32(2)
@@ -386,43 +384,43 @@ pub fn (mut g Gen) generate_macho_footer() {
 
 fn (mut g Gen) sym_table_command() {
 	g.syms << Symbol{
-		str_entry: 0x19
+		str_entry:  0x19
 		symbol_typ: 0xe
-		section: 1
-		val: 0
-		name: '_start'
-		is_ext: true
+		section:    1
+		val:        0
+		name:       '_start'
+		is_ext:     true
 	}
 	g.syms << Symbol{
-		str_entry: 0x0e
+		str_entry:  0x0e
 		symbol_typ: 0xe
 		// symbol_typ: SYM_DEF
 		section: 1
-		val: 0x18
-		name: '_puts'
-		is_ext: false
+		val:     0x18
+		name:    '_puts'
+		is_ext:  false
 	}
 	g.syms << Symbol{
-		str_entry: 0x01
+		str_entry:  0x01
 		symbol_typ: 0xf
 		// symbol_typ: SYM_DEF
 		section: 1
 		// val: 0x27
-		val: 0
-		name: 'helloworld'
+		val:    0
+		name:   'helloworld'
 		is_ext: false
 	}
 	g.syms << Symbol{
-		str_entry: 0x08
+		str_entry:  0x08
 		symbol_typ: 0x1
 		// symbol_typ: SYM_DEF
 		section: 0
 		// val: 0x27
-		val: 0
-		name: 'ltmp1'
+		val:    0
+		name:   'ltmp1'
 		is_ext: false
 	}
-	g.macho_add_loadcommand(native.lc_symtab, native.macho_symcmd_size)
+	g.macho_add_loadcommand(lc_symtab, macho_symcmd_size)
 	sym_table_offset := i32(0x168)
 	g.write32(sym_table_offset)
 	g_syms_len := i32(4)

@@ -31,7 +31,7 @@ fn test_all_topics() {
 	}
 }
 
-fn test_uknown_topic() {
+fn test_unknown_topic() {
 	res := os.execute(vexe + ' help abc')
 	assert res.exit_code == 1, res.output
 	assert res.output.starts_with('error: unknown help topic "abc".')
@@ -48,4 +48,13 @@ fn test_topic_sub_help() {
 	res := os.execute(vexe + ' fmt --help')
 	assert res.exit_code == 0, res.output
 	assert res.output != ''
+}
+
+fn test_help_topic_with_cli_mod() {
+	res := os.execute_or_exit(vexe + ' help init')
+	assert res.output.contains('Usage: v init [flags]')
+	assert res.output.contains('Sets up a V project within the current directory.')
+	assert res.output.contains('Flags:')
+	assert res.output.contains('--bin               Use the template for an executable application [default]')
+	assert res.output.contains('--lib               Use the template for a library project.')
 }

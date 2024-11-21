@@ -21,12 +21,10 @@ import sokol.gfx
 // import sokol.sgl
 import time
 
-const (
-	win_width  = 800
-	win_height = 800
-	bg_color   = gx.white
-	num_inst   = 16384
-)
+const win_width = 800
+const win_height = 800
+const bg_color = gx.white
+const num_inst = 16384
 
 struct App {
 mut:
@@ -36,8 +34,8 @@ mut:
 	init_flag   bool
 	frame_count int
 
-	mouse_x    int = -1
-	mouse_y    int = -1
+	mouse_x    int = 903
+	mouse_y    int = 638
 	mouse_down bool
 	// glsl
 	cube_pip_glsl gfx.Pipeline
@@ -50,15 +48,14 @@ mut:
 	// instances
 	inst_pos [num_inst]m4.Vec4
 	// camera
-	camera_x f32
-	camera_z f32
+	camera_x f32 = -8
+	camera_z f32 = 47
 }
 
 /******************************************************************************
 * GLSL Include and functions
 ******************************************************************************/
-#flag -I @VMODROOT/.
-#include "rt_glsl_instancing.h" # Should be generated with `v shader .` (see the instructions at the top of this file)
+#include "@VMODROOT/rt_glsl_instancing.h" # It should be generated with `v shader .` (see the instructions at the top of this file)
 
 fn C.instancing_shader_desc(gfx.Backend) &gfx.ShaderDesc
 
@@ -83,7 +80,7 @@ fn create_texture(w int, h int, buf byteptr) (gfx.Image, gfx.Sampler) {
 	// vfmt on
 	// comment if .dynamic is enabled
 	img_desc.data.subimage[0][0] = gfx.Range{
-		ptr: buf
+		ptr:  buf
 		size: usize(sz)
 	}
 
@@ -92,8 +89,8 @@ fn create_texture(w int, h int, buf byteptr) (gfx.Image, gfx.Sampler) {
 	mut smp_desc := gfx.SamplerDesc{
 		min_filter: .linear
 		mag_filter: .linear
-		wrap_u: .clamp_to_edge
-		wrap_v: .clamp_to_edge
+		wrap_u:     .clamp_to_edge
+		wrap_v:     .clamp_to_edge
 	}
 
 	sg_smp := gfx.make_sampler(&smp_desc)
@@ -109,7 +106,7 @@ fn update_text_texture(sg_img gfx.Image, w int, h int, buf byteptr) {
 	sz := w * h * 4
 	mut tmp_sbc := gfx.ImageData{}
 	tmp_sbc.subimage[0][0] = gfx.Range{
-		ptr: buf
+		ptr:  buf
 		size: usize(sz)
 	}
 	gfx.update_image(sg_img, &tmp_sbc)
@@ -186,10 +183,10 @@ fn init_cube_glsl_i(mut app App) {
 	unsafe { vmemset(&vert_buffer_desc, 0, int(sizeof(vert_buffer_desc))) }
 	vert_buffer_desc.size = usize(vertices.len * int(sizeof(Vertex_t)))
 	vert_buffer_desc.data = gfx.Range{
-		ptr: vertices.data
+		ptr:  vertices.data
 		size: usize(vertices.len * int(sizeof(Vertex_t)))
 	}
-	vert_buffer_desc.@type = .vertexbuffer
+	vert_buffer_desc.type = .vertexbuffer
 	vbuf := gfx.make_buffer(&vert_buffer_desc)
 
 	// create an instance buffer for the cube
@@ -199,7 +196,7 @@ fn init_cube_glsl_i(mut app App) {
 	unsafe { vmemset(&inst_buffer_desc, 0, int(sizeof(inst_buffer_desc))) }
 
 	inst_buffer_desc.size = usize(num_inst * int(sizeof(m4.Vec4)))
-	inst_buffer_desc.@type = .vertexbuffer
+	inst_buffer_desc.type = .vertexbuffer
 	inst_buffer_desc.usage = .stream
 	inst_buf := gfx.make_buffer(&inst_buffer_desc)
 
@@ -221,10 +218,10 @@ fn init_cube_glsl_i(mut app App) {
 	unsafe { vmemset(&index_buffer_desc, 0, int(sizeof(index_buffer_desc))) }
 	index_buffer_desc.size = usize(indices.len * int(sizeof(u16)))
 	index_buffer_desc.data = gfx.Range{
-		ptr: indices.data
+		ptr:  indices.data
 		size: usize(indices.len * int(sizeof(u16)))
 	}
-	index_buffer_desc.@type = .indexbuffer
+	index_buffer_desc.type = .indexbuffer
 	ibuf := gfx.make_buffer(&index_buffer_desc)
 
 	// create shader
@@ -256,7 +253,7 @@ fn init_cube_glsl_i(mut app App) {
 
 	pipdesc.depth = gfx.DepthState{
 		write_enabled: true
-		compare: .less_equal
+		compare:       .less_equal
 	}
 	pipdesc.cull_mode = .back
 
@@ -333,7 +330,7 @@ fn draw_cube_glsl_i(mut app App) {
 		// vfmt on
 	}
 	range := gfx.Range{
-		ptr: unsafe { &app.inst_pos }
+		ptr:  unsafe { &app.inst_pos }
 		size: usize(num_inst * int(sizeof(m4.Vec4)))
 	}
 	gfx.update_buffer(app.bind['inst'].vertex_buffers[1], &range)
@@ -343,7 +340,7 @@ fn draw_cube_glsl_i(mut app App) {
 	// passing the view matrix as uniform
 	// res is a 4x4 matrix of f32 thus: 4*16 byte of size
 	vs_uniforms_range := gfx.Range{
-		ptr: unsafe { &tr_matrix }
+		ptr:  unsafe { &tr_matrix }
 		size: usize(4 * 16)
 	}
 	gfx.apply_uniforms(.vs, C.SLOT_vs_params_i, &vs_uniforms_range)
@@ -391,8 +388,6 @@ fn draw_end_glsl(app App) {
 }
 
 fn frame(mut app App) {
-	ws := gg.window_size_real_pixels()
-
 	// clear
 	mut color_action := gfx.ColorAttachmentAction{
 		load_action: .clear
@@ -405,7 +400,8 @@ fn frame(mut app App) {
 	}
 	mut pass_action := gfx.PassAction{}
 	pass_action.colors[0] = color_action
-	gfx.begin_default_pass(&pass_action, ws.width, ws.height)
+	pass := gg.create_default_pass(pass_action)
+	gfx.begin_pass(&pass)
 
 	draw_start_glsl(app)
 	draw_cube_glsl_i(mut app)
@@ -492,17 +488,11 @@ fn my_event_manager(mut ev gg.Event, mut app App) {
 			else {}
 		}
 	}
+	eprintln('>> app.camera_x: ${app.camera_x} , app.camera_z: ${app.camera_z}, app.mouse_x: ${app.mouse_x}, app.mouse_y: ${app.mouse_y}')
 }
 
-/******************************************************************************
-* Main
-******************************************************************************/
 fn main() {
-	// App init
-	mut app := &App{
-		gg: 0
-	}
-
+	mut app := &App{}
 	// vfmt off
 	app.gg = gg.new_context(
 		width:         win_width
@@ -516,7 +506,6 @@ fn main() {
 		event_fn:      my_event_manager
 	)
 	// vfmt on
-
 	app.ticks = time.ticks()
 	app.gg.run()
 }

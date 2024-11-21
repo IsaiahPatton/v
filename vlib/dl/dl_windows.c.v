@@ -1,13 +1,11 @@
 module dl
 
-pub const (
-	rtld_now      = 0
-	rtld_lazy     = 0
-	rtld_global   = 0
-	rtld_local    = 0
-	rtld_nodelete = 0
-	rtld_noload   = 0
-)
+pub const rtld_now = 0
+pub const rtld_lazy = 0
+pub const rtld_global = 0
+pub const rtld_local = 0
+pub const rtld_nodelete = 0
+pub const rtld_noload = 0
 
 fn C.LoadLibrary(libfilename &u16) voidptr
 
@@ -15,14 +13,32 @@ fn C.GetProcAddress(handle voidptr, procname &u8) voidptr
 
 fn C.FreeLibrary(handle voidptr) bool
 
+type FN_vinit_caller = fn ()
+
+type FN_vcleanup_caller = fn ()
+
 // open loads a given module into the address space of the calling process.
 pub fn open(filename string, flags int) voidptr {
 	res := C.LoadLibrary(filename.to_wide())
+	// Because LoadLibrary has no constructor, this is a workaround
+	if !isnil(res) {
+		vinit_caller := FN_vinit_caller(sym(res, '_vinit_caller'))
+		if !isnil(vinit_caller) {
+			vinit_caller()
+		}
+	}
 	return res
 }
 
 // close frees the loaded a given module.
 pub fn close(handle voidptr) bool {
+	// Because FreeLibrary has no destructor, this is a workaround
+	if !isnil(handle) {
+		vcleanup_caller := FN_vcleanup_caller(sym(handle, '_vcleanup_caller'))
+		if !isnil(vcleanup_caller) {
+			vcleanup_caller()
+		}
+	}
 	return C.FreeLibrary(handle)
 }
 

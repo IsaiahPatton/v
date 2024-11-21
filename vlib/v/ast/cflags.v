@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2023 Alexander Medvednikov. All rights reserved.
+// Copyright (c) 2019-2024 Alexander Medvednikov. All rights reserved.
 // Use of this source code is governed by an MIT license
 // that can be found in the LICENSE file.
 module ast
@@ -74,9 +74,9 @@ pub fn (mut t Table) parse_cflag(cflg string, mod string, ctimedefines []string)
 			return error('bad #flag `${flag_orig}`: missing ${hint} after `${name}`')
 		}
 		cf := cflag.CFlag{
-			mod: mod
-			os: fos
-			name: name
+			mod:   mod
+			os:    fos
+			name:  name
 			value: value
 		}
 		if !t.has_cflag(cf) {

@@ -12,7 +12,7 @@ pub fn vwasm_heap_base() voidptr {
 }
 
 // vwasm_heap_size returns the size of the main wasm memory in pages.
-// Analagous to the `memory.size` instruction.
+// Analogous to the `memory.size` instruction.
 pub fn vwasm_memory_size() int {
 	mut rval := 0
 	asm wasm {
@@ -24,7 +24,7 @@ pub fn vwasm_memory_size() int {
 }
 
 // vwasm_memory_grow grows the main wasm memory by `size` pages.
-// Analagous to the `memory.grow` instruction.
+// Analogous to the `memory.grow` instruction.
 pub fn vwasm_memory_grow(size int) int {
 	mut rval := 0
 	asm wasm {
@@ -39,8 +39,8 @@ pub fn vwasm_memory_grow(size int) int {
 
 // vcalloc dynamically allocates a zeroed `n` bytes block of memory on the heap.
 // vcalloc returns a `byteptr` pointing to the memory address of the allocated space.
-// Unlike `v_calloc` vcalloc checks for negative values given in `n`.
-[unsafe]
+// vcalloc checks for negative values given in `n`.
+@[unsafe]
 pub fn vcalloc(n isize) &u8 {
 	if n <= 0 {
 		panic('vcalloc(n <= 0)')
@@ -63,14 +63,14 @@ pub fn vcalloc(n isize) &u8 {
 }
 
 // isnil returns true if an object is nil (only for C objects).
-[inline]
+@[inline]
 pub fn isnil(v voidptr) bool {
 	return v == 0
 }
 
 // vmemcpy copies n bytes from memory area src to memory area dest.
 // The memory areas **CAN** overlap. vmemcpy returns a pointer to `dest`.
-[unsafe]
+@[unsafe]
 pub fn vmemcpy(dest voidptr, const_src voidptr, n isize) voidptr {
 	asm wasm {
 		local.get dest
@@ -86,7 +86,7 @@ pub fn vmemcpy(dest voidptr, const_src voidptr, n isize) voidptr {
 
 // vmemmove copies n bytes from memory area src to memory area dest.
 // The memory areas **CAN** overlap. vmemmove returns a pointer to `dest`.
-[unsafe]
+@[unsafe]
 pub fn vmemmove(dest voidptr, const_src voidptr, n isize) voidptr {
 	asm wasm {
 		local.get dest
@@ -102,7 +102,7 @@ pub fn vmemmove(dest voidptr, const_src voidptr, n isize) voidptr {
 
 // vmemset fills the first `n` bytes of the memory area pointed to by `s`,
 // with the constant byte `c`. It returns a pointer to the memory area `s`.
-[unsafe]
+@[unsafe]
 pub fn vmemset(s voidptr, c int, n isize) voidptr {
 	asm wasm {
 		local.get s

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2023 Alexander Medvednikov. All rights reserved.
+// Copyright (c) 2019-2024 Alexander Medvednikov. All rights reserved.
 // Use of this source code is governed by an MIT license that can be found in the LICENSE file.
 module gg
 
@@ -13,18 +13,18 @@ pub enum MouseButton {
 // the [flag]-ed enum here can have combined states,
 // representing several pressed buttons at once.
 
-[flag]
+@[flag]
 pub enum MouseButtons {
 	left
 	right
 	middle
 }
 
-[flag]
+@[flag]
 pub enum Modifier {
 	shift // (1<<0)
-	ctrl // (1<<1)
-	alt // (1<<2)
+	ctrl  // (1<<1)
+	alt   // (1<<2)
 	super // (1<<3)
 }
 
@@ -80,10 +80,10 @@ pub enum KeyCode {
 	x             = 88
 	y             = 89
 	z             = 90
-	left_bracket  = 91 //[
-	backslash     = 92 //\
-	right_bracket = 93 //]
-	grave_accent  = 96 //`
+	left_bracket  = 91  //[
+	backslash     = 92  //\
+	right_bracket = 93  //]
+	grave_accent  = 96  //`
 	world_1       = 161 // non-us #1
 	world_2       = 162 // non-us #2
 	escape        = 256

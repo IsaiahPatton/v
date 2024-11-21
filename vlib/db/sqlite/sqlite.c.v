@@ -8,35 +8,33 @@ $if windows {
 	#flag windows -I@VEXEROOT/thirdparty/sqlite
 	#flag windows -L@VEXEROOT/thirdparty/sqlite
 	#flag windows @VEXEROOT/thirdparty/sqlite/sqlite3.o
+	#include "sqlite3.h" # The SQLite header file is missing. Please run .github/workflows/windows-install-sqlite.bat to download an SQLite amalgamation.
 } $else {
 	#flag -lsqlite3
+	#include "sqlite3.h" # The SQLite header file is missing. Please install its development package first.
 }
 
-#include "sqlite3.h"
-
 // https://www.sqlite.org/rescode.html
-pub const (
-	sqlite_ok                 = 0
-	sqlite_error              = 1
-	sqlite_row                = 100
-	sqlite_done               = 101
-	sqlite_cantopen           = 14
-	sqlite_ioerr_read         = 266
-	sqlite_ioerr_short_read   = 522
-	sqlite_ioerr_write        = 778
-	sqlite_ioerr_fsync        = 1034
-	sqlite_ioerr_fstat        = 1802
-	sqlite_ioerr_delete       = 2570
+pub const sqlite_ok = 0
+pub const sqlite_error = 1
+pub const sqlite_row = 100
+pub const sqlite_done = 101
+pub const sqlite_cantopen = 14
+pub const sqlite_ioerr_read = 266
+pub const sqlite_ioerr_short_read = 522
+pub const sqlite_ioerr_write = 778
+pub const sqlite_ioerr_fsync = 1034
+pub const sqlite_ioerr_fstat = 1802
+pub const sqlite_ioerr_delete = 2570
 
-	sqlite_open_main_db       = 0x00000100
-	sqlite_open_temp_db       = 0x00000200
-	sqlite_open_transient_db  = 0x00000400
-	sqlite_open_main_journal  = 0x00000800
-	sqlite_open_temp_journal  = 0x00001000
-	sqlite_open_subjournal    = 0x00002000
-	sqlite_open_super_journal = 0x00004000
-	sqlite_open_wal           = 0x00080000
-)
+pub const sqlite_open_main_db = 0x00000100
+pub const sqlite_open_temp_db = 0x00000200
+pub const sqlite_open_transient_db = 0x00000400
+pub const sqlite_open_main_journal = 0x00000800
+pub const sqlite_open_temp_journal = 0x00001000
+pub const sqlite_open_subjournal = 0x00002000
+pub const sqlite_open_super_journal = 0x00004000
+pub const sqlite_open_wal = 0x00080000
 
 pub enum SyncMode {
 	off
@@ -58,10 +56,10 @@ pub struct C.sqlite3 {
 pub struct C.sqlite3_stmt {
 }
 
-[heap]
+@[heap]
 pub struct Stmt {
 	stmt &C.sqlite3_stmt = unsafe { nil }
-	db   &DB = unsafe { nil }
+	db   &DB             = unsafe { nil }
 }
 
 struct SQLError {
@@ -69,7 +67,7 @@ struct SQLError {
 }
 
 //
-[heap]
+@[heap]
 pub struct DB {
 pub mut:
 	is_open bool
@@ -133,12 +131,12 @@ pub fn connect(path string) !DB {
 	code := C.sqlite3_open(&char(path.str), &db)
 	if code != 0 {
 		return &SQLError{
-			msg: unsafe { cstring_to_vstring(&char(C.sqlite3_errmsg(db))) }
+			msg:  unsafe { cstring_to_vstring(&char(C.sqlite3_errmsg(db))) }
 			code: code
 		}
 	}
 	return DB{
-		conn: db
+		conn:    db
 		is_open: true
 	}
 }
@@ -152,7 +150,7 @@ pub fn (mut db DB) close() !bool {
 		db.is_open = false
 	} else {
 		return &SQLError{
-			msg: unsafe { cstring_to_vstring(&char(C.sqlite3_errmsg(db.conn))) }
+			msg:  unsafe { cstring_to_vstring(&char(C.sqlite3_errmsg(db.conn))) }
 			code: code
 		}
 	}
@@ -190,7 +188,7 @@ pub fn (db &DB) q_int(query string) !int {
 	}
 	C.sqlite3_prepare_v2(db.conn, &char(query.str), query.len, &stmt, 0)
 	code := C.sqlite3_step(stmt)
-	if code != sqlite.sqlite_row {
+	if code != sqlite_row {
 		return db.error_message(code, query)
 	}
 
@@ -206,7 +204,7 @@ pub fn (db &DB) q_string(query string) !string {
 	}
 	C.sqlite3_prepare_v2(db.conn, &char(query.str), query.len, &stmt, 0)
 	code := C.sqlite3_step(stmt)
-	if code != sqlite.sqlite_row {
+	if code != sqlite_row {
 		return db.error_message(code, query)
 	}
 
@@ -215,14 +213,14 @@ pub fn (db &DB) q_string(query string) !string {
 }
 
 // exec executes the query on the given `db`, and returns an array of all the results, or an error on failure
-[manualfree]
+@[manualfree]
 pub fn (db &DB) exec(query string) ![]Row {
 	stmt := &C.sqlite3_stmt(unsafe { nil })
 	defer {
 		C.sqlite3_finalize(stmt)
 	}
 	mut code := C.sqlite3_prepare_v2(db.conn, &char(query.str), query.len, &stmt, 0)
-	if code != sqlite.sqlite_ok {
+	if code != sqlite_ok {
 		return db.error_message(code, query)
 	}
 
@@ -252,7 +250,7 @@ pub fn (db &DB) exec(query string) ![]Row {
 
 // exec_one executes a query on the given `db`.
 // It returns either the first row from the result, if the query was successful, or an error.
-[manualfree]
+@[manualfree]
 pub fn (db &DB) exec_one(query string) !Row {
 	rows := db.exec(query)!
 	defer {
@@ -260,8 +258,8 @@ pub fn (db &DB) exec_one(query string) !Row {
 	}
 	if rows.len == 0 {
 		return &SQLError{
-			msg: 'No rows'
-			code: sqlite.sqlite_done
+			msg:  'No rows'
+			code: sqlite_done
 		}
 	}
 	res := rows[0]
@@ -269,13 +267,13 @@ pub fn (db &DB) exec_one(query string) !Row {
 }
 
 // error_message returns a proper V error, given an integer error code received from SQLite, and a query string
-[manualfree]
+@[manualfree]
 pub fn (db &DB) error_message(code int, query string) IError {
 	errmsg := unsafe { cstring_to_vstring(&char(C.sqlite3_errmsg(db.conn))) }
 	msg := '${errmsg} (${code}) (${query})'
 	unsafe { errmsg.free() }
 	return SQLError{
-		msg: msg
+		msg:  msg
 		code: code
 	}
 }
@@ -316,7 +314,10 @@ pub fn (db &DB) exec_param_many(query string, params []string) ![]Row {
 	mut rows := []Row{}
 	for {
 		res = C.sqlite3_step(stmt)
-		if res != sqlite.sqlite_row {
+		if res != sqlite_row {
+			if rows.len == 0 && is_error(res) {
+				return db.error_message(res, query)
+			}
 			break
 		}
 		mut row := Row{}

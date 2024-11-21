@@ -6,6 +6,18 @@ import strings
 #include <process.h>
 #include <sys/utime.h>
 
+// path_separator is the platform specific separator string, used between the folders
+// and filenames in a path. It is '/' on POSIX, and '\\' on Windows.
+pub const path_separator = '\\'
+
+// path_delimiter is the platform specific delimiter string, used between the paths
+// in environment variables like PATH. It is ':' on POSIX, and ';' on Windows.
+pub const path_delimiter = ';'
+
+// path_devnull is a platform-specific file path of the null device.
+// It is '/dev/null' on POSIX, and r'\\.\nul' on Windows.
+pub const path_devnull = r'\\.\nul'
+
 // See https://docs.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-createsymboliclinkw
 fn C.CreateSymbolicLinkW(&u16, &u16, u32) int
 
@@ -15,11 +27,6 @@ fn C.CreateHardLinkW(&u16, &u16, C.SECURITY_ATTRIBUTES) int
 fn C._getpid() int
 
 const executable_suffixes = ['.exe', '.bat', '.cmd', '']
-
-pub const (
-	path_separator = '\\'
-	path_delimiter = ';'
-)
 
 // Ref - https://docs.microsoft.com/en-us/windows/desktop/winprog/windows-data-types
 // A handle to an object.
@@ -96,6 +103,8 @@ pub struct C._utimbuf {
 
 fn C._utime(&char, voidptr) int
 
+@[deprecated: 'os.args now uses arguments()']
+@[deprecated_after: '2024-07-30']
 fn init_os_args_wide(argc int, argv &&u8) []string {
 	mut args_ := []string{len: argc}
 	for i in 0 .. argc {
@@ -155,7 +164,7 @@ pub fn utime(path string, actime int, modtime int) ! {
 }
 
 pub fn ls(path string) ![]string {
-	if path.len == 0 {
+	if path == '' {
 		return error('ls() expects a folder, not an empty string')
 	}
 	mut find_file_data := Win32finddata{}
@@ -232,40 +241,34 @@ pub fn get_module_filename(handle HANDLE) !string {
 			}
 		}
 	}
-	panic('this should be unreachable') // TODO remove unreachable after loop
+	panic('this should be unreachable') // TODO: remove unreachable after loop
 }
 
 // Ref - https://docs.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-FormatMessageWa#parameters
-const (
-	format_message_allocate_buffer = 0x00000100
-	format_message_argument_array  = 0x00002000
-	format_message_from_hmodule    = 0x00000800
-	format_message_from_string     = 0x00000400
-	format_message_from_system     = 0x00001000
-	format_message_ignore_inserts  = 0x00000200
-)
+const format_message_allocate_buffer = 0x00000100
+const format_message_argument_array = 0x00002000
+const format_message_from_hmodule = 0x00000800
+const format_message_from_string = 0x00000400
+const format_message_from_system = 0x00001000
+const format_message_ignore_inserts = 0x00000200
 
 // Ref - winnt.h
-const (
-	sublang_neutral = 0x00
-	sublang_default = 0x01
-	lang_neutral    = sublang_neutral
-)
+const sublang_neutral = 0x00
+const sublang_default = 0x01
+const lang_neutral = sublang_neutral
 
 // Ref - https://docs.microsoft.com/en-us/windows/win32/debug/system-error-codes--12000-15999-
-const (
-	max_error_code = 15841 // ERROR_API_UNAVAILABLE
-)
+const max_error_code = 15841
 
 // ptr_win_get_error_msg return string (voidptr)
 // representation of error, only for windows.
 fn ptr_win_get_error_msg(code u32) voidptr {
 	mut buf := unsafe { nil }
 	// Check for code overflow
-	if code > u32(os.max_error_code) {
+	if code > u32(max_error_code) {
 		return buf
 	}
-	C.FormatMessageW(os.format_message_allocate_buffer | os.format_message_from_system | os.format_message_ignore_inserts,
+	C.FormatMessageW(format_message_allocate_buffer | format_message_from_system | format_message_ignore_inserts,
 		0, code, 0, voidptr(&buf), 0, 0)
 	return buf
 }
@@ -289,7 +292,7 @@ pub fn execute(cmd string) Result {
 	if cmd.contains(';') || cmd.contains('&&') || cmd.contains('||') || cmd.contains('\n') {
 		return Result{
 			exit_code: -1
-			output: ';, &&, || and \\n are not allowed in shell commands'
+			output:    ';, &&, || and \\n are not allowed in shell commands'
 		}
 	}
 	return unsafe { raw_execute(cmd) }
@@ -298,7 +301,7 @@ pub fn execute(cmd string) Result {
 // raw_execute starts the specified command, waits for it to complete, and returns its output.
 // It's marked as `unsafe` to help emphasize the problems that may arise by allowing, for example,
 // user provided escape sequences.
-[unsafe]
+@[unsafe]
 pub fn raw_execute(cmd string) Result {
 	mut child_stdin := &u32(0)
 	mut child_stdout_read := &u32(0)
@@ -313,7 +316,7 @@ pub fn raw_execute(cmd string) Result {
 		error_msg := get_error_msg(error_num)
 		return Result{
 			exit_code: error_num
-			output: 'exec failed (CreatePipe): ${error_msg}'
+			output:    'exec failed (CreatePipe): ${error_msg}'
 		}
 	}
 	set_handle_info_ok := C.SetHandleInformation(child_stdout_read, C.HANDLE_FLAG_INHERIT,
@@ -323,20 +326,20 @@ pub fn raw_execute(cmd string) Result {
 		error_msg := get_error_msg(error_num)
 		return Result{
 			exit_code: error_num
-			output: 'exec failed (SetHandleInformation): ${error_msg}'
+			output:    'exec failed (SetHandleInformation): ${error_msg}'
 		}
 	}
 	proc_info := ProcessInformation{}
 	start_info := StartupInfo{
-		lp_reserved2: 0
-		lp_reserved: 0
-		lp_desktop: 0
-		lp_title: 0
-		cb: sizeof(C.PROCESS_INFORMATION)
-		h_std_input: child_stdin
+		lp_reserved2: unsafe { nil }
+		lp_reserved:  unsafe { nil }
+		lp_desktop:   unsafe { nil }
+		lp_title:     unsafe { nil }
+		cb:           sizeof(StartupInfo)
+		h_std_input:  child_stdin
 		h_std_output: child_stdout_write
-		h_std_error: child_stdout_write
-		dw_flags: u32(C.STARTF_USESTDHANDLES)
+		h_std_error:  child_stdout_write
+		dw_flags:     u32(C.STARTF_USESTDHANDLES)
 	}
 
 	mut pcmd := cmd
@@ -357,7 +360,7 @@ pub fn raw_execute(cmd string) Result {
 		error_msg := get_error_msg(error_num)
 		return Result{
 			exit_code: error_num
-			output: 'exec failed (CreateProcess) with code ${error_num}: ${error_msg} cmd: ${cmd}'
+			output:    'exec failed (CreateProcess) with code ${error_num}: ${error_msg} cmd: ${cmd}'
 		}
 	}
 	C.CloseHandle(child_stdin)
@@ -384,7 +387,7 @@ pub fn raw_execute(cmd string) Result {
 	C.CloseHandle(proc_info.h_process)
 	C.CloseHandle(proc_info.h_thread)
 	return Result{
-		output: soutput
+		output:    soutput
 		exit_code: int(exit_code)
 	}
 }
@@ -479,11 +482,11 @@ pub fn uname() Uname {
 	version_info := execute('cmd /d/c ver').output
 	version_n := (version_info.split(' '))[3].replace(']', '').trim_space()
 	return Uname{
-		sysname: 'Windows_NT' // as of 2022-12, WinOS has only two possible kernels ~ 'Windows_NT' or 'Windows_9x'
+		sysname:  'Windows_NT' // as of 2022-12, WinOS has only two possible kernels ~ 'Windows_NT' or 'Windows_9x'
 		nodename: nodename
-		machine: machine.trim_space()
-		release: (version_n.split('.'))[0..2].join('.').trim_space() // Major.minor-only == "primary"/release version
-		version: (version_n.split('.'))[2].trim_space()
+		machine:  machine.trim_space()
+		release:  (version_n.split('.'))[0..2].join('.').trim_space() // Major.minor-only == "primary"/release version
+		version:  (version_n.split('.'))[2].trim_space()
 	}
 }
 
@@ -524,32 +527,32 @@ pub fn ensure_folder_is_writable(folder string) ! {
 	rm(tmp_perm_check)!
 }
 
-[inline]
+@[inline]
 pub fn getpid() int {
 	return C._getpid()
 }
 
-[inline]
+@[inline]
 pub fn getppid() int {
 	return 0
 }
 
-[inline]
+@[inline]
 pub fn getuid() int {
 	return 0
 }
 
-[inline]
+@[inline]
 pub fn geteuid() int {
 	return 0
 }
 
-[inline]
+@[inline]
 pub fn getgid() int {
 	return 0
 }
 
-[inline]
+@[inline]
 pub fn getegid() int {
 	return 0
 }
@@ -591,4 +594,20 @@ fn get_long_path(path string) !string {
 	}
 	long_path := unsafe { string_from_wide(&long_path_buf[0]) }
 	return long_path
+}
+
+// C.SYSTEM_INFO contains information about the current computer system. This includes the architecture and type of the processor, the number of processors in the system, the page size, and other such information.
+@[typedef]
+pub struct C.SYSTEM_INFO {
+	dwNumberOfProcessors u32
+	dwPageSize           u32
+}
+
+fn C.GetSystemInfo(&C.SYSTEM_INFO)
+
+// page_size returns the page size in bytes.
+pub fn page_size() int {
+	sinfo := C.SYSTEM_INFO{}
+	C.GetSystemInfo(&sinfo)
+	return int(sinfo.dwPageSize)
 }

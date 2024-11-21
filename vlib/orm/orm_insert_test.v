@@ -1,56 +1,58 @@
+// vtest flaky: true
+// vtest retry: 3
 import db.sqlite
 import rand
 
 struct Parent {
-	id       int     [primary; sql: serial]
+	id       int @[primary; sql: serial]
 	name     string
-	children []Child [fkey: 'parent_id']
-	notes    []Note  [fkey: 'owner_id']
+	children []Child @[fkey: 'parent_id']
+	notes    []Note  @[fkey: 'owner_id']
 }
 
 struct Child {
 mut:
-	id        int    [primary; sql: serial]
+	id        int @[primary; sql: serial]
 	parent_id int
 	name      string
 }
 
 struct Note {
 mut:
-	id       int    [primary; sql: serial]
+	id       int @[primary; sql: serial]
 	owner_id int
 	text     string
 }
 
 struct Account {
-	id int [primary; sql: serial]
+	id int @[primary; sql: serial]
 }
 
 struct Package {
-	id     int    [primary; sql: serial]
-	name   string [unique]
-	author User   [fkey: 'id'] // mandatory user
+	id     int    @[primary; sql: serial]
+	name   string @[unique]
+	author User   @[fkey: 'id'] // mandatory user
 }
 
 struct Delivery {
-	id     int    [primary; sql: serial]
-	name   string [unique]
-	author ?User  [fkey: 'id'] // optional user
+	id     int    @[primary; sql: serial]
+	name   string @[unique]
+	author ?User  @[fkey: 'id'] // optional user
 }
 
 struct User {
 pub mut:
-	id       int    [primary; sql: serial]
-	username string [unique]
+	id       int    @[primary; sql: serial]
+	username string @[unique]
 }
 
 struct Entity {
-	uuid        string [primary]
+	uuid        string @[primary]
 	description string
 }
 
 struct EntityWithFloatPrimary {
-	id   f64    [primary]
+	id   f64 @[primary]
 	name string
 }
 
@@ -72,7 +74,7 @@ fn test_set_primary_value() {
 	}!
 
 	child := Child{
-		id: 10
+		id:        10
 		parent_id: 20
 	}
 
@@ -96,7 +98,7 @@ fn test_uuid_primary_key() {
 	}!
 
 	entity := Entity{
-		uuid: uuid
+		uuid:        uuid
 		description: 'Test'
 	}
 
@@ -128,7 +130,7 @@ fn test_float_primary_key() {
 	}!
 
 	entity := EntityWithFloatPrimary{
-		id: id
+		id:   id
 		name: 'Test'
 	}
 
@@ -182,7 +184,7 @@ fn test_insert_empty_mandatory_field() {
 	}!
 
 	package := Package{
-		name: 'xml'
+		name:   'xml'
 		author: User{}
 	}
 
@@ -230,7 +232,7 @@ fn test_insert_empty_optional_field() {
 	}!
 
 	package := Delivery{
-		name: 'bob'
+		name:   'bob'
 		author: User{}
 	}
 
@@ -294,7 +296,7 @@ fn test_orm_insert_with_multiple_child_elements() {
 	}!
 
 	new_parent := Parent{
-		name: 'test'
+		name:     'test'
 		children: [
 			Child{
 				name: 'Lisa'
@@ -303,7 +305,7 @@ fn test_orm_insert_with_multiple_child_elements() {
 				name: 'Steve'
 			},
 		]
-		notes: [
+		notes:    [
 			Note{
 				text: 'First note'
 			},
@@ -346,9 +348,57 @@ fn test_orm_insert_with_multiple_child_elements() {
 	assert parent.notes[2].text == 'Third note'
 }
 
-[table: 'customers']
+fn test_orm_insert_with_child_element_and_no_table() {
+	mut db := sqlite.connect(':memory:')!
+
+	sql db {
+		create table Parent
+	}!
+
+	new_parent := Parent{
+		name:     'test'
+		children: [
+			Child{
+				name: 'Lisa'
+			},
+		]
+	}
+
+	sql db {
+		insert new_parent into Parent
+	} or { assert true }
+
+	sql db {
+		create table Child
+	}!
+
+	sql db {
+		insert new_parent into Parent
+	} or { assert false }
+
+	new_parent_two := Parent{
+		name:     'retest'
+		children: [
+			Child{
+				name: 'Sophia'
+			},
+		]
+	}
+
+	sql db {
+		insert new_parent_two into Parent
+	} or { assert false }
+
+	p_table := sql db {
+		select from Parent
+	}!
+
+	assert p_table[2].children[0].name == 'Sophia'
+}
+
+@[table: 'customers']
 struct Customer {
-	id   i64    [primary; sql: serial]
+	id   i64 @[primary; sql: serial]
 	name string
 }
 
@@ -370,4 +420,38 @@ fn test_i64_primary_field_works_with_insertions_of_id_0() {
 	}!
 	assert users.len == 2
 	// println("${users}")
+}
+
+struct Address {
+	id     i64 @[primary; sql: serial]
+	street string
+	number int
+}
+
+fn test_the_result_of_insert_should_be_the_last_insert_id() {
+	db := sqlite.connect(':memory:')!
+	address := Address{
+		street: 'abc'
+		number: 123
+	}
+	dump(address)
+	sql db {
+		create table Address
+	} or {}
+	aid1 := sql db {
+		insert address into Address
+	} or { panic(err) }
+	dump(aid1)
+	assert aid1 == 1
+	aid2 := sql db {
+		insert address into Address
+	} or { panic(err) }
+	dump(aid2)
+	assert aid2 == 2
+	addresses := sql db {
+		select from Address
+	}!
+	dump(addresses)
+	assert addresses.len == 2
+	assert addresses.all(it.street == 'abc' && it.number == 123)
 }

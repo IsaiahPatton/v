@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2023 Alexander Medvednikov. All rights reserved.
+// Copyright (c) 2019-2024 Alexander Medvednikov. All rights reserved.
 // Use of this source code is governed by an MIT license
 // that can be found in the LICENSE file.
 module native
@@ -77,36 +77,36 @@ enum Amd64SetOp {
 	np = 0x9b0f
 }
 
-[params]
+@[params]
 struct AvailableAmd64Register {
+pub:
 	available Amd64Register
 }
 
-[params]
+@[params]
 struct Amd64RegisterOption {
+pub:
 	reg    Amd64Register    = Amd64Register.rax
 	ssereg Amd64SSERegister = Amd64SSERegister.xmm0
 }
 
-const (
-	amd64_system_v_call_regs    = [Amd64Register.rdi, .rsi, .rdx, .rcx, .r8, .r9]
-	amd64_system_v_call_sseregs = [Amd64SSERegister.xmm0, .xmm1, .xmm2, .xmm3, .xmm4, .xmm5, .xmm6,
-		.xmm7]
+const amd64_system_v_call_regs = [Amd64Register.rdi, .rsi, .rdx, .rcx, .r8, .r9]
+const amd64_system_v_call_sseregs = [Amd64SSERegister.xmm0, .xmm1, .xmm2, .xmm3, .xmm4, .xmm5,
+	.xmm6, .xmm7]
 
-	// reference: https://learn.microsoft.com/en-us/cpp/build/x64-calling-convention?view=msvc-170#parameter-passing
-	amd64_windows_call_regs     = [Amd64Register.rcx, .rdx, .r8, .r9]
-	amd64_windows_call_sseregs  = [Amd64SSERegister.xmm0, .xmm1, .xmm2, .xmm3]
+// reference: https://learn.microsoft.com/en-us/cpp/build/x64-calling-convention?view=msvc-170#parameter-passing
+const amd64_windows_call_regs = [Amd64Register.rcx, .rdx, .r8, .r9]
+const amd64_windows_call_sseregs = [Amd64SSERegister.xmm0, .xmm1, .xmm2, .xmm3]
 
-	amd64_cpuregs               = ['eax', 'ecx', 'edx', 'ebx', 'esp', 'ebp', 'esi', 'edi']
-)
+const amd64_cpuregs = ['eax', 'ecx', 'edx', 'ebx', 'esp', 'ebp', 'esi', 'edi']
 
 fn amd64_get_call_regs(os pref.OS) []Amd64Register {
 	return match os {
 		.windows {
-			native.amd64_windows_call_regs
+			amd64_windows_call_regs
 		}
 		else {
-			native.amd64_system_v_call_regs
+			amd64_system_v_call_regs
 		}
 	}
 }
@@ -114,10 +114,10 @@ fn amd64_get_call_regs(os pref.OS) []Amd64Register {
 fn amd64_get_call_sseregs(os pref.OS) []Amd64SSERegister {
 	return match os {
 		.windows {
-			native.amd64_windows_call_sseregs
+			amd64_windows_call_sseregs
 		}
 		else {
-			native.amd64_system_v_call_sseregs
+			amd64_system_v_call_sseregs
 		}
 	}
 }
@@ -666,7 +666,7 @@ fn (mut c Amd64) mov_reg_to_var(var Var, r Register, config VarConfig) {
 						size_str = 'BYTE'
 					}
 					else {
-						ts := c.g.table.sym(typ.idx())
+						ts := c.g.table.sym(typ.idx_type())
 						if ts.info is ast.Enum {
 							if is_extended_register {
 								c.g.write8(0x44)
@@ -1076,7 +1076,7 @@ pub fn (mut c Amd64) pop(reg Amd64Register) {
 pub fn (mut c Amd64) sub8(reg Amd64Register, val i32) {
 	c.g.write8(0x48)
 	c.g.write8(0x83)
-	c.g.write8(0xe8 + i32(reg)) // TODO rax is different?
+	c.g.write8(0xe8 + i32(reg)) // TODO: rax is different?
 	c.g.write8(val)
 	c.g.println('sub8 ${reg},${int(val).hex2()}')
 }
@@ -1188,7 +1188,7 @@ fn (mut c Amd64) leave() {
 			label := c.g.labels.new_label()
 			jump_addr := c.cjmp(.je)
 			c.g.labels.patches << LabelPatch{
-				id: label
+				id:  label
 				pos: jump_addr
 			}
 			c.g.stmts(defer_stmt.stmts)
@@ -1729,7 +1729,7 @@ pub fn (mut c Amd64) call_fn(node ast.CallExpr) {
 	return_size := c.g.get_type_size(node.return_type)
 	mut return_pos := i32(-1)
 	mut is_struct_return := false
-	if ts.kind in [.struct_, .multi_return] {
+	if ts.kind in [.struct, .multi_return] {
 		return_pos = c.g.allocate_by_type('', node.return_type)
 		if return_size > 16 {
 			is_struct_return = true
@@ -1742,7 +1742,7 @@ pub fn (mut c Amd64) call_fn(node ast.CallExpr) {
 	if node.is_method {
 		expr := if !node.left_type.is_ptr() && node.receiver_type.is_ptr() {
 			ast.Expr(ast.PrefixExpr{
-				op: .amp
+				op:    .amp
 				right: node.left
 			})
 		} else {
@@ -1750,7 +1750,7 @@ pub fn (mut c Amd64) call_fn(node ast.CallExpr) {
 		}
 		args << ast.CallArg{
 			expr: expr
-			typ: node.receiver_type
+			typ:  node.receiver_type
 		}
 	}
 
@@ -1802,7 +1802,7 @@ pub fn (mut c Amd64) call_fn(node ast.CallExpr) {
 			continue
 		}
 		c.g.expr(args[i].expr)
-		if c.g.table.sym(args[i].typ).kind == .struct_ && !args[i].typ.is_ptr() {
+		if c.g.table.sym(args[i].typ).kind == .struct && !args[i].typ.is_ptr() {
 			match args_size[i] {
 				1...8 {
 					c.mov_deref(Amd64Register.rax, Amd64Register.rax, ast.i64_type_idx)
@@ -1877,12 +1877,12 @@ pub fn (mut c Amd64) call_fn(node ast.CallExpr) {
 	}
 	c.g.println('call `${n}()`')
 
-	if ts.kind in [.struct_, .multi_return] {
+	if ts.kind in [.struct, .multi_return] {
 		match return_size {
 			1...7 {
 				c.mov_var_to_reg(Amd64Register.rdx, LocalVar{
 					offset: return_pos
-					typ: ast.i64_type_idx
+					typ:    ast.i64_type_idx
 				})
 				c.movabs(Amd64Register.rcx, i64(
 					0xffffffffffffffff - (u64(1) << (return_size * 8)) + 1))
@@ -1900,7 +1900,7 @@ pub fn (mut c Amd64) call_fn(node ast.CallExpr) {
 					Amd64Register.rax)
 				c.mov_var_to_reg(Amd64Register.rax, LocalVar{
 					offset: return_pos
-					typ: ast.i64_type_idx
+					typ:    ast.i64_type_idx
 				},
 					offset: 8
 				)
@@ -1958,7 +1958,7 @@ fn (mut c Amd64) assign_struct_var(ident_var IdentVar, typ ast.Type, s i32) {
 		c.mov_deref(Amd64Register.rbx, Amd64Register.rax, ast.u64_type_idx)
 		c.mov_reg_to_var(var, Amd64Register.rbx,
 			offset: offset
-			typ: ast.u64_type_idx
+			typ:    ast.u64_type_idx
 		)
 		c.add(Amd64Register.rax, 8)
 
@@ -1970,7 +1970,7 @@ fn (mut c Amd64) assign_struct_var(ident_var IdentVar, typ ast.Type, s i32) {
 		c.mov_deref(Amd64Register.rbx, Amd64Register.rax, ast.u32_type_idx)
 		c.mov_reg_to_var(var, Amd64Register.rbx,
 			offset: offset
-			typ: ast.u32_type_idx
+			typ:    ast.u32_type_idx
 		)
 		c.add(Amd64Register.rax, 4)
 
@@ -1982,7 +1982,7 @@ fn (mut c Amd64) assign_struct_var(ident_var IdentVar, typ ast.Type, s i32) {
 		c.mov_deref(Amd64Register.rbx, Amd64Register.rax, ast.u16_type_idx)
 		c.mov_reg_to_var(var, Amd64Register.rbx,
 			offset: offset
-			typ: ast.u16_type_idx
+			typ:    ast.u16_type_idx
 		)
 		c.add(Amd64Register.rax, 2)
 
@@ -1994,7 +1994,7 @@ fn (mut c Amd64) assign_struct_var(ident_var IdentVar, typ ast.Type, s i32) {
 		c.mov_deref(Amd64Register.rbx, Amd64Register.rax, ast.u8_type_idx)
 		c.mov_reg_to_var(var, Amd64Register.rbx,
 			offset: offset
-			typ: ast.u8_type_idx
+			typ:    ast.u8_type_idx
 		)
 		c.add(Amd64Register.rax, 1)
 
@@ -2219,7 +2219,7 @@ fn (mut c Amd64) assign_right_expr(node ast.AssignStmt, i i32, right ast.Expr, n
 			} else {
 				c.g.n_error('only integers and idents can be used as indexes')
 			}
-			// TODO check if out of bounds access
+			// TODO: check if out of bounds access
 			c.mov_reg_to_var(ident, Amd64Register.eax)
 		}
 	}*/
@@ -2237,7 +2237,7 @@ fn (mut c Amd64) gen_type_promotion(from ast.Type, to ast.Type, option Amd64Regi
 			c.test_reg(option.reg)
 			addr1 := c.cjmp(.js)
 			c.g.labels.patches << LabelPatch{
-				id: label1
+				id:  label1
 				pos: addr1
 			}
 			// if castee is in the range of i64
@@ -2253,7 +2253,7 @@ fn (mut c Amd64) gen_type_promotion(from ast.Type, to ast.Type, option Amd64Regi
 			c.g.println('cvtsi2s${inst} ${option.ssereg}, ${option.reg}')
 			addr2 := c.jmp(0)
 			c.g.labels.patches << LabelPatch{
-				id: label2
+				id:  label2
 				pos: addr2
 			}
 			c.g.labels.addrs[label1] = c.g.pos()
@@ -2323,7 +2323,7 @@ fn (mut c Amd64) return_stmt(node ast.Return) {
 			size := c.g.get_type_size(typ)
 			if c.g.pref.arch == .amd64 {
 				match ts.kind {
-					.struct_, .multi_return {
+					.struct, .multi_return {
 						if size <= 8 {
 							c.mov_deref(Amd64Register.rax, Amd64Register.rax, ast.i64_type_idx)
 							if size != 8 {
@@ -2343,7 +2343,7 @@ fn (mut c Amd64) return_stmt(node ast.Return) {
 							offset := c.g.get_var_offset('_return_val_addr')
 							c.mov_var_to_reg(Amd64Register.rdx, LocalVar{
 								offset: offset
-								typ: ast.i64_type_idx
+								typ:    ast.i64_type_idx
 							})
 							for i in 0 .. size / 8 {
 								c.mov_deref(Amd64Register.rcx, Amd64Register.rax, ast.i64_type_idx)
@@ -2361,7 +2361,7 @@ fn (mut c Amd64) return_stmt(node ast.Return) {
 							}
 							c.mov_var_to_reg(c.main_reg(), LocalVar{
 								offset: offset
-								typ: ast.i64_type_idx
+								typ:    ast.i64_type_idx
 							})
 						}
 					}
@@ -2376,7 +2376,7 @@ fn (mut c Amd64) return_stmt(node ast.Return) {
 		// construct a struct variable contains the return value
 		var := LocalVar{
 			offset: c.g.allocate_by_type('', typ)
-			typ: typ
+			typ:    typ
 		}
 
 		c.zero_fill(size, var)
@@ -2385,7 +2385,7 @@ fn (mut c Amd64) return_stmt(node ast.Return) {
 		for i, expr in node.exprs {
 			offset := c.g.structs[typ.idx()].offsets[i]
 			c.g.expr(expr)
-			// TODO expr not on rax
+			// TODO: expr not on rax
 			c.mov_reg_to_var(var, Amd64Register.rax, offset: offset, typ: ts.mr_info().types[i])
 		}
 		// store the multi return struct value
@@ -2410,7 +2410,7 @@ fn (mut c Amd64) return_stmt(node ast.Return) {
 				offset := c.g.get_var_offset('_return_val_addr')
 				c.mov_var_to_reg(Amd64Register.rdx, LocalVar{
 					offset: offset
-					typ: ast.i64_type_idx
+					typ:    ast.i64_type_idx
 				})
 				for i in 0 .. size / 8 {
 					c.mov_deref(Amd64Register.rcx, Amd64Register.rax, ast.i64_type_idx)
@@ -2428,7 +2428,7 @@ fn (mut c Amd64) return_stmt(node ast.Return) {
 				}
 				c.mov_var_to_reg(c.main_reg(), LocalVar{
 					offset: offset
-					typ: ast.i64_type_idx
+					typ:    ast.i64_type_idx
 				})
 			}
 		}
@@ -2438,7 +2438,7 @@ fn (mut c Amd64) return_stmt(node ast.Return) {
 	label := i32(0)
 	pos := c.jmp(0)
 	c.g.labels.patches << LabelPatch{
-		id: label
+		id:  label
 		pos: pos
 	}
 	c.g.println('; jump to label ${label}')
@@ -2463,7 +2463,7 @@ fn (mut c Amd64) multi_assign_stmt(node ast.AssignStmt) {
 		for i, expr in node.right {
 			offset := multi_return.offsets[i]
 			c.g.expr(expr)
-			// TODO expr not on rax
+			// TODO: expr not on rax
 			c.mov_reg_to_var(var, Amd64Register.rax, offset: offset, typ: node.right_types[i])
 		}
 		// store the multi return struct value
@@ -2631,7 +2631,7 @@ fn (mut c Amd64) assign_stmt(node ast.AssignStmt) {
 			}
 			ts := c.g.table.sym(typ)
 			match ts.kind {
-				.struct_ {
+				.struct {
 					size := c.g.get_type_size(typ)
 					if size >= 8 {
 						for j in 0 .. size / 8 {
@@ -2676,7 +2676,7 @@ fn (mut c Amd64) assign_stmt(node ast.AssignStmt) {
 						}
 					}
 				}
-				.enum_ {
+				.enum {
 					c.mov_store(.rdx, .rax, ._32)
 				}
 				else {}
@@ -2738,7 +2738,7 @@ fn (mut c Amd64) prefix_expr(node ast.PrefixExpr) {
 		.not {
 			c.g.expr(node.right)
 			c.cmp_zero(Amd64Register.rax)
-			// TODO mov_extend_reg
+			// TODO: mov_extend_reg
 			c.mov64(Amd64Register.rax, 0)
 			c.cset(.e)
 		}
@@ -2775,7 +2775,7 @@ fn (mut c Amd64) fp_infix_expr(node ast.InfixExpr, left_type ast.Type) {
 		}
 		.gt, .lt, .ge, .le {
 			c.cmp_sse(.xmm0, .xmm1, left_type)
-			// TODO mov_extend_reg
+			// TODO: mov_extend_reg
 			c.mov64(Amd64Register.rax, 0)
 			c.cset(match node.op {
 				.gt { .a }
@@ -2809,7 +2809,7 @@ fn (mut c Amd64) infix_expr(node ast.InfixExpr) {
 		c.cmp_zero(Amd64Register.rax)
 		jump_addr := c.cjmp(if node.op == .logical_or { .jne } else { .je })
 		c.g.labels.patches << LabelPatch{
-			id: label
+			id:  label
 			pos: jump_addr
 		}
 		c.g.expr(node.right)
@@ -2855,7 +2855,7 @@ fn (mut c Amd64) infix_expr(node ast.InfixExpr) {
 	match node.op {
 		.eq, .ne, .gt, .lt, .ge, .le {
 			c.cmp_reg(.rax, .rdx)
-			// TODO mov_extend_reg
+			// TODO: mov_extend_reg
 			c.mov64(Amd64Register.rax, 0)
 			c.cset_op(node.op)
 		}
@@ -2946,7 +2946,7 @@ fn (mut c Amd64) gen_asm_stmt(asm_node ast.AsmStmt) {
 			match a {
 				ast.AsmRegister {
 					regname = a.name
-					reg = i32(native.amd64_cpuregs.index(regname))
+					reg = i32(amd64_cpuregs.index(regname))
 					line += a.typ.str()
 				}
 				ast.IntegerLiteral {
@@ -3082,6 +3082,10 @@ fn (mut c Amd64) infloop() {
 }
 
 fn (mut c Amd64) fn_decl(node ast.FnDecl) {
+	if node.attrs.contains('flag_enum_fn') {
+		// TODO: remove, when the native backend can process all flagged enum generated functions
+		return
+	}
 	c.push(Amd64Register.rbp)
 	c.mov_reg(Amd64Register.rbp, Amd64Register.rsp)
 	local_alloc_pos := c.g.pos()
@@ -3096,11 +3100,11 @@ fn (mut c Amd64) fn_decl(node ast.FnDecl) {
 	// The first parameter is an address of returned struct if size > 16
 	ts := c.g.table.sym(node.return_type)
 	return_size := c.g.get_type_size(node.return_type)
-	if ts.kind in [.struct_, .multi_return] {
+	if ts.kind in [.struct, .multi_return] {
 		if return_size > 16 {
 			params << ast.Param{
 				name: '_return_val_addr'
-				typ: ast.voidptr_type_idx
+				typ:  ast.voidptr_type_idx
 			}
 		}
 	}
@@ -3343,7 +3347,7 @@ fn (mut c Amd64) init_struct(var Var, init ast.StructInit) {
 						if f.has_default_expr && !init.init_fields.map(it.name).contains(f.name) {
 							offset := c.g.structs[typ.idx()].offsets[i]
 							c.g.expr(f.default_expr)
-							// TODO expr not on rax
+							// TODO: expr not on rax
 							c.mov_reg_to_var(var, Amd64Register.rax, offset: offset, typ: f.typ)
 						}
 					}
@@ -3357,7 +3361,7 @@ fn (mut c Amd64) init_struct(var Var, init ast.StructInit) {
 				offset := c.g.structs[typ.idx()].offsets[field.i]
 
 				c.g.expr(f.expr)
-				// TODO expr not on rax
+				// TODO: expr not on rax
 				c.mov_reg_to_var(var, Amd64Register.rax, offset: offset, typ: field.typ)
 			}
 		}
@@ -3405,7 +3409,7 @@ fn (mut c Amd64) convert_bool_to_string(r Register) {
 	false_label := c.g.labels.new_label()
 	false_cjmp_addr := c.cjmp(.je)
 	c.g.labels.patches << LabelPatch{
-		id: false_label
+		id:  false_label
 		pos: false_cjmp_addr
 	}
 	c.g.println('; jump to label ${false_label}')
@@ -3415,7 +3419,7 @@ fn (mut c Amd64) convert_bool_to_string(r Register) {
 	end_label := c.g.labels.new_label()
 	end_jmp_addr := c.jmp(0)
 	c.g.labels.patches << LabelPatch{
-		id: end_label
+		id:  end_label
 		pos: end_jmp_addr
 	}
 	c.g.println('; jump to label ${end_label}')
@@ -3461,7 +3465,7 @@ fn (mut c Amd64) convert_int_to_string(a Register, b Register) {
 	skip_zero_label := c.g.labels.new_label()
 	skip_zero_cjmp_addr := c.cjmp(.jne)
 	c.g.labels.patches << LabelPatch{
-		id: skip_zero_label
+		id:  skip_zero_label
 		pos: skip_zero_cjmp_addr
 	}
 	c.g.println('; jump to label ${skip_zero_label}')
@@ -3477,7 +3481,7 @@ fn (mut c Amd64) convert_int_to_string(a Register, b Register) {
 	end_label := c.g.labels.new_label()
 	end_jmp_addr := c.jmp(0)
 	c.g.labels.patches << LabelPatch{
-		id: end_label
+		id:  end_label
 		pos: end_jmp_addr
 	}
 	c.g.println('; jump to label ${end_label}')
@@ -3493,7 +3497,7 @@ fn (mut c Amd64) convert_int_to_string(a Register, b Register) {
 	skip_minus_label := c.g.labels.new_label()
 	skip_minus_cjmp_addr := c.cjmp(.jge)
 	c.g.labels.patches << LabelPatch{
-		id: skip_minus_label
+		id:  skip_minus_label
 		pos: skip_minus_cjmp_addr
 	}
 	c.g.println('; jump to label ${skip_minus_label}')
@@ -3543,7 +3547,7 @@ fn (mut c Amd64) convert_int_to_string(a Register, b Register) {
 	c.cmp_zero(Amd64Register.rax)
 	loop_cjmp_addr := c.cjmp(.jg)
 	c.g.labels.patches << LabelPatch{
-		id: loop_label
+		id:  loop_label
 		pos: loop_cjmp_addr
 	}
 	c.g.println('; jump to label ${skip_minus_label}')
@@ -3643,7 +3647,7 @@ fn (mut c Amd64) gen_match_expr(expr ast.MatchExpr) {
 						c.g.println('test bl, bl')
 						then_addr := c.cjmp(.jne)
 						c.g.labels.patches << LabelPatch{
-							id: branch_labels[int(i)]
+							id:  branch_labels[int(i)]
 							pos: then_addr
 						}
 						c.push(Amd64Register.rdx)
@@ -3654,7 +3658,7 @@ fn (mut c Amd64) gen_match_expr(expr ast.MatchExpr) {
 						c.cmp_reg(.rax, .rdx)
 						then_addr := c.cjmp(.je)
 						c.g.labels.patches << LabelPatch{
-							id: branch_labels[int(i)]
+							id:  branch_labels[int(i)]
 							pos: then_addr
 						}
 						c.push(Amd64Register.rdx)
@@ -3666,7 +3670,7 @@ fn (mut c Amd64) gen_match_expr(expr ast.MatchExpr) {
 	c.pop(.rdx)
 	else_addr := c.jmp(0)
 	c.g.labels.patches << LabelPatch{
-		id: else_label
+		id:  else_label
 		pos: else_addr
 	}
 	for i, branch in expr.branches {
@@ -3675,7 +3679,7 @@ fn (mut c Amd64) gen_match_expr(expr ast.MatchExpr) {
 			c.g.stmt(stmt)
 		}
 		c.g.labels.patches << LabelPatch{
-			id: end_label
+			id:  end_label
 			pos: c.jmp(0)
 		}
 	}
@@ -3942,7 +3946,7 @@ fn (mut c Amd64) gen_cast_expr(expr ast.CastExpr) {
 				c.test_reg(.rax)
 				addr1 := c.cjmp(.js)
 				c.g.labels.patches << LabelPatch{
-					id: label1
+					id:  label1
 					pos: addr1
 				}
 				// if castee is in the range of i64
@@ -3959,7 +3963,7 @@ fn (mut c Amd64) gen_cast_expr(expr ast.CastExpr) {
 				}
 				addr2 := c.jmp(0)
 				c.g.labels.patches << LabelPatch{
-					id: label2
+					id:  label2
 					pos: addr2
 				}
 				c.g.labels.addrs[label1] = c.g.pos()
@@ -4000,7 +4004,7 @@ fn (mut c Amd64) gen_cast_expr(expr ast.CastExpr) {
 			if c.g.get_type_size(expr.typ) == 8 && !expr.typ.is_signed() {
 				label1 := c.g.labels.new_label()
 				label2 := c.g.labels.new_label()
-				// TODO constant
+				// TODO: constant
 				c.movabs(Amd64Register.rdx, i64(u64(0x4000000000000000)))
 				match c.g.get_type_size(expr.expr_type) {
 					4 {
@@ -4018,7 +4022,7 @@ fn (mut c Amd64) gen_cast_expr(expr ast.CastExpr) {
 				c.cmp_sse(.xmm0, .xmm1, expr.expr_type)
 				addr1 := c.cjmp(.jnb)
 				c.g.labels.patches << LabelPatch{
-					id: label1
+					id:  label1
 					pos: addr1
 				}
 				match c.g.get_type_size(expr.expr_type) {
@@ -4034,7 +4038,7 @@ fn (mut c Amd64) gen_cast_expr(expr ast.CastExpr) {
 				}
 				addr2 := c.jmp(0)
 				c.g.labels.patches << LabelPatch{
-					id: label2
+					id:  label2
 					pos: addr2
 				}
 				c.g.labels.addrs[label1] = c.g.pos()

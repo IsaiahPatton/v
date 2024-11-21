@@ -39,28 +39,13 @@ pub enum SameSite {
 	same_site_none_mode
 }
 
-// Parses all "Set-Cookie" values from the header `h` and
-// returns the successfully parsed Cookies.
-pub fn read_set_cookies(h map[string][]string) []&Cookie {
-	cookies_s := h['Set-Cookie']
-	cookie_count := cookies_s.len
-	if cookie_count == 0 {
-		return []
-	}
-	mut cookies := []&Cookie{}
-	for _, line in cookies_s {
-		c := parse_cookie(line) or { continue }
-		cookies << &c
-	}
-	return cookies
-}
-
 // Parses all "Cookie" values from the header `h` and
 // returns the successfully parsed Cookies.
 //
 // if `filter` isn't empty, only cookies of that name are returned
-pub fn read_cookies(h map[string][]string, filter string) []&Cookie {
-	lines := h['Cookie']
+pub fn read_cookies(h Header, filter string) []&Cookie {
+	// lines := h['Cookie']
+	lines := h.values(.cookie) // or {
 	if lines.len == 0 {
 		return []
 	}
@@ -97,7 +82,7 @@ pub fn read_cookies(h map[string][]string, filter string) []&Cookie {
 			}
 			val = parse_cookie_value(val, true) or { continue }
 			cookies << &Cookie{
-				name: name
+				name:  name
 				value: val
 			}
 		}
@@ -143,8 +128,7 @@ pub fn (c &Cookie) str() string {
 		}
 	}
 	if c.expires.year > 1600 {
-		e := c.expires
-		time_str := '${e.weekday_str()}, ${e.day.str()} ${e.smonth()} ${e.year} ${e.hhmmss()} GMT'
+		time_str := c.expires.http_header_string()
 		b.write_string('; expires=')
 		b.write_string(time_str)
 	}
@@ -263,7 +247,7 @@ pub fn is_cookie_domain_name(_s string) bool {
 	mut part_len := 0
 	for i, _ in s {
 		c := s[i]
-		if (`a` <= c && c <= `z`) || (`A` <= c && c <= `Z`) {
+		if c.is_letter() {
 			// No '_' allowed here (in contrast to package net).
 			ok = true
 			part_len++
@@ -339,9 +323,9 @@ fn parse_cookie(line string) !Cookie {
 	}
 	value := parse_cookie_value(raw_value, true) or { return error('malformed cookie') }
 	mut c := Cookie{
-		name: name
+		name:  name
 		value: value
-		raw: line
+		raw:   line
 	}
 	for i, _ in parts {
 		parts[i] = parts[i].trim_space()

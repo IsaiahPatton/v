@@ -6,8 +6,8 @@ import net.conv
 
 // sql expr
 
-// @select is used internally by V's ORM for processing `SELECT ` queries
-pub fn (db DB) @select(config orm.SelectConfig, data orm.QueryData, where orm.QueryData) ![][]orm.Primitive {
+// select is used internally by V's ORM for processing `SELECT ` queries
+pub fn (db DB) select(config orm.SelectConfig, data orm.QueryData, where orm.QueryData) ![][]orm.Primitive {
 	query := orm.orm_select_gen(config, '"', true, '$', 1, where)
 
 	rows := pg_stmt_worker(db, query, where, data)!
@@ -143,13 +143,15 @@ fn pg_stmt_match(mut types []u32, mut vals []&char, mut lens []int, mut formats 
 		}
 		f32 {
 			types << u32(Oid.t_float4)
-			vals << &char(&data)
+			num := conv.htonf32(f32(data))
+			vals << &char(&num)
 			lens << int(sizeof(f32))
 			formats << 1
 		}
 		f64 {
 			types << u32(Oid.t_float8)
-			vals << &char(&data)
+			num := conv.htonf64(f64(data))
+			vals << &char(&num)
 			lens << int(sizeof(f64))
 			formats << 1
 		}

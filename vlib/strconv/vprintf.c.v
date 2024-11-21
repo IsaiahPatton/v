@@ -1,5 +1,5 @@
 /*=============================================================================
-Copyright (c) 2019-2023 Dario Deledda. All rights reserved.
+Copyright (c) 2019-2024 Dario Deledda. All rights reserved.
 Use of this source code is governed by an MIT license
 that can be found in the LICENSE file.
 
@@ -22,17 +22,17 @@ enum Char_parse_state {
 	reset_params
 }
 
-// v_printf prints a sprintf-like formated `string` to the terminal.
+// v_printf prints a sprintf-like formatted `string` to the terminal.
 // The format string `str` can be constructed at runtime.
 // Note, that this function is unsafe.
 // In most cases, you are better off using V's string interpolation,
 // when your format string is known at compile time.
-[unsafe]
+@[unsafe]
 pub fn v_printf(str string, pt ...voidptr) {
 	print(unsafe { v_sprintf(str, ...pt) })
 }
 
-// v_sprintf returns a sprintf-like formated `string`.
+// v_sprintf returns a sprintf-like formatted `string`.
 // The format string `str` can be constructed at runtime.
 // Note, that this function is unsafe.
 // In most cases, you are better off using V's string interpolation,
@@ -42,7 +42,7 @@ pub fn v_printf(str string, pt ...voidptr) {
 // x := 3.141516
 // assert strconv.v_sprintf('aaa %G', x) == 'aaa 3.141516'
 // ```
-[direct_array_access; manualfree; unsafe]
+@[direct_array_access; manualfree; unsafe]
 pub fn v_sprintf(str string, pt ...voidptr) string {
 	mut res := strings.new_builder(pt.len * 16)
 	defer {
@@ -249,7 +249,7 @@ pub fn v_sprintf(str string, pt ...voidptr) string {
 				// println("$ch1 $ch2")
 				match ch1 {
 					// h for 16 bit int
-					// hh fot 8 bit int
+					// hh for 8 bit int
 					`h` {
 						if ch2 == `h` {
 							v_sprintf_panic(p_index, pt.len)
@@ -293,12 +293,12 @@ pub fn v_sprintf(str string, pt ...voidptr) string {
 					}
 				}
 				tmp := format_dec_old(d1,
-					pad_ch: pad_ch
-					len0: len0
-					len1: 0
-					positive: positive
+					pad_ch:    pad_ch
+					len0:      len0
+					len1:      0
+					positive:  positive
 					sign_flag: sign
-					align: align
+					align:     align
 				)
 				res.write_string(tmp)
 				unsafe { tmp.free() }
@@ -316,7 +316,7 @@ pub fn v_sprintf(str string, pt ...voidptr) string {
 				v_sprintf_panic(p_index, pt.len)
 				match ch1 {
 					// h for 16 bit unsigned int
-					// hh fot 8 bit unsigned int
+					// hh for 8 bit unsigned int
 					`h` {
 						if ch2 == `h` {
 							d1 = u64(unsafe { *(&u8(pt[p_index])) })
@@ -344,12 +344,12 @@ pub fn v_sprintf(str string, pt ...voidptr) string {
 				}
 
 				tmp := format_dec_old(d1,
-					pad_ch: pad_ch
-					len0: len0
-					len1: 0
-					positive: positive
+					pad_ch:    pad_ch
+					len0:      len0
+					len1:      0
+					positive:  positive
 					sign_flag: sign
-					align: align
+					align:     align
 				)
 				res.write_string(tmp)
 				unsafe { tmp.free() }
@@ -403,12 +403,12 @@ pub fn v_sprintf(str string, pt ...voidptr) string {
 				}
 
 				tmp := format_str(s,
-					pad_ch: pad_ch
-					len0: len0
-					len1: 0
-					positive: true
+					pad_ch:    pad_ch
+					len0:      len0
+					len1:      0
+					positive:  true
 					sign_flag: false
-					align: align
+					align:     align
 				)
 				res.write_string(tmp)
 				unsafe { tmp.free() }
@@ -427,12 +427,12 @@ pub fn v_sprintf(str string, pt ...voidptr) string {
 					positive := x >= f64(0.0)
 					len1 = if len1 >= 0 { len1 } else { def_len1 }
 					s := format_fl_old(f64(x),
-						pad_ch: pad_ch
-						len0: len0
-						len1: len1
-						positive: positive
+						pad_ch:    pad_ch
+						len0:      len0
+						len1:      len1
+						positive:  positive
 						sign_flag: sign
-						align: align
+						align:     align
 					)
 					if ch == `F` {
 						tmp := s.to_upper()
@@ -454,12 +454,12 @@ pub fn v_sprintf(str string, pt ...voidptr) string {
 					positive := x >= f64(0.0)
 					len1 = if len1 >= 0 { len1 } else { def_len1 }
 					s := format_es_old(f64(x),
-						pad_ch: pad_ch
-						len0: len0
-						len1: len1
-						positive: positive
+						pad_ch:    pad_ch
+						len0:      len0
+						len1:      len1
+						positive:  positive
 						sign_flag: sign
-						align: align
+						align:     align
 					)
 					if ch == `E` {
 						tmp := s.to_upper()
@@ -486,12 +486,12 @@ pub fn v_sprintf(str string, pt ...voidptr) string {
 						len1 = if len1 >= 0 { len1 + 1 } else { def_len1 }
 						tmp := s
 						s = format_fl_old(x,
-							pad_ch: pad_ch
-							len0: len0
-							len1: len1
-							positive: positive
-							sign_flag: sign
-							align: align
+							pad_ch:       pad_ch
+							len0:         len0
+							len1:         len1
+							positive:     positive
+							sign_flag:    sign
+							align:        align
 							rm_tail_zero: true
 						)
 						unsafe { tmp.free() }
@@ -499,12 +499,12 @@ pub fn v_sprintf(str string, pt ...voidptr) string {
 						len1 = if len1 >= 0 { len1 + 1 } else { def_len1 }
 						tmp := s
 						s = format_es_old(x,
-							pad_ch: pad_ch
-							len0: len0
-							len1: len1
-							positive: positive
-							sign_flag: sign
-							align: align
+							pad_ch:       pad_ch
+							len0:         len0
+							len1:         len1
+							positive:     positive
+							sign_flag:    sign
+							align:        align
 							rm_tail_zero: true
 						)
 						unsafe { tmp.free() }
@@ -529,12 +529,12 @@ pub fn v_sprintf(str string, pt ...voidptr) string {
 				s1 := unsafe { *(&string(pt[p_index])) }
 				pad_ch = ` `
 				tmp := format_str(s1,
-					pad_ch: pad_ch
-					len0: len0
-					len1: 0
-					positive: true
+					pad_ch:    pad_ch
+					len0:      len0
+					len1:      0
+					positive:  true
 					sign_flag: false
-					align: align
+					align:     align
 				)
 				res.write_string(tmp)
 				unsafe { tmp.free() }
@@ -557,7 +557,7 @@ pub fn v_sprintf(str string, pt ...voidptr) string {
 	return res.str()
 }
 
-[inline]
+@[inline]
 fn v_sprintf_panic(idx int, len int) {
 	if idx >= len {
 		panic('${idx + 1} % conversion specifiers, but given only ${len} args')
@@ -572,7 +572,7 @@ fn fabs(x f64) f64 {
 }
 
 // strings.Builder version of format_fl
-[direct_array_access; manualfree]
+@[direct_array_access; manualfree]
 pub fn format_fl_old(f f64, p BF_param) string {
 	unsafe {
 		mut s := ''
@@ -649,7 +649,7 @@ pub fn format_fl_old(f f64, p BF_param) string {
 	}
 }
 
-[manualfree]
+@[manualfree]
 fn format_es_old(f f64, p BF_param) string {
 	unsafe {
 		mut s := ''
@@ -755,7 +755,7 @@ fn remove_tail_zeros_old(s string) string {
 }
 
 // max int64 9223372036854775807
-[manualfree]
+@[manualfree]
 pub fn format_dec_old(d u64, p BF_param) string {
 	mut s := ''
 	mut res := strings.new_builder(20)

@@ -1,7 +1,7 @@
 module datatypes
 
 /// Internal representation of the tree node
-[heap]
+@[heap]
 struct BSTreeNode[T] {
 mut:
 	// Mark a node as initialized
@@ -22,10 +22,10 @@ mut:
 fn new_root_node[T](value T) &BSTreeNode[T] {
 	return &BSTreeNode[T]{
 		is_init: true
-		value: value
-		parent: new_none_node[T](true)
-		left: new_none_node[T](false)
-		right: new_none_node[T](false)
+		value:   value
+		parent:  new_none_node[T](true)
+		left:    new_none_node[T](false)
+		right:   new_none_node[T](false)
 	}
 }
 
@@ -33,8 +33,8 @@ fn new_root_node[T](value T) &BSTreeNode[T] {
 fn new_node[T](parent &BSTreeNode[T], value T) &BSTreeNode[T] {
 	return &BSTreeNode[T]{
 		is_init: true
-		value: value
-		parent: parent
+		value:   value
+		parent:  parent
 	}
 }
 

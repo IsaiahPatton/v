@@ -1,10 +1,10 @@
-// Copyright (c) 2019-2023 Alexander Medvednikov. All rights reserved.
+// Copyright (c) 2019-2024 Alexander Medvednikov. All rights reserved.
 // Use of this source code is governed by an MIT license
 // that can be found in the LICENSE file.
 module math
 
 // maxof returns the maximum value of the type `T`
-[inline]
+@[inline]
 pub fn maxof[T]() T {
 	$if T is i8 {
 		return max_i8
@@ -41,7 +41,7 @@ pub fn maxof[T]() T {
 }
 
 // minof returns the minimum value of the type `T`
-[inline]
+@[inline]
 pub fn minof[T]() T {
 	$if T is i8 {
 		return min_i8

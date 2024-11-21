@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2023 Alexander Medvednikov. All rights reserved.
+// Copyright (c) 2019-2024 Alexander Medvednikov. All rights reserved.
 // Use of this source code is governed by an MIT license that can be found in the LICENSE file.
 module pref
 
@@ -52,8 +52,8 @@ fn (mut p Preferences) parse_line_info(line string) {
 
 	p.linfo = LineInfo{
 		line_nr: line_nr
-		path: file_name
-		expr: expr
+		path:    file_name
+		expr:    expr
 	}
 }
 

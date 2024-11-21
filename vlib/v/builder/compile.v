@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2023 Alexander Medvednikov. All rights reserved.
+// Copyright (c) 2019-2024 Alexander Medvednikov. All rights reserved.
 // Use of this source code is governed by an MIT license
 // that can be found in the LICENSE file.
 module builder
@@ -6,7 +6,6 @@ module builder
 import os
 import v.pref
 import v.util
-import v.checker
 
 pub type FnBackend = fn (mut b Builder)
 
@@ -38,7 +37,7 @@ fn check_if_output_folder_is_writable(pref_ &pref.Preferences) {
 }
 
 // Temporary, will be done by -autofree
-[unsafe]
+@[unsafe]
 fn (mut b Builder) myfree() {
 	// for file in b.parsed_files {
 	// }
@@ -172,7 +171,7 @@ fn (mut b Builder) run_compiled_executable_and_exit() {
 fn eshcb(_ os.Signal) {
 }
 
-[noreturn]
+@[noreturn]
 fn serror(reason string, e IError) {
 	eprintln('could not ${reason} handler')
 	panic(e)
@@ -263,7 +262,7 @@ pub fn (v Builder) get_builtin_files() []string {
 				builtin_files << v.v_files_from_dir(v.pref.bare_builtin_dir)
 			}
 			if v.pref.backend == .c {
-				// TODO JavaScript backend doesn't handle os for now
+				// TODO: JavaScript backend doesn't handle os for now
 				if v.pref.is_vsh && os.exists(os.join_path(location, 'os')) {
 					builtin_files << v.v_files_from_dir(os.join_path(location, 'os'))
 				}
@@ -290,10 +289,9 @@ pub fn (v &Builder) get_user_files() []string {
 	// libs, but we dont know	which libs need to be added yet
 	mut user_files := []string{}
 	// See cmd/tools/preludes/README.md for more info about what preludes are
-	vroot := os.dir(pref.vexe_path())
-	mut preludes_path := os.join_path(vroot, 'vlib', 'v', 'preludes')
+	mut preludes_path := os.join_path(v.pref.vroot, 'vlib', 'v', 'preludes')
 	if v.pref.backend == .js_node {
-		preludes_path = os.join_path(vroot, 'vlib', 'v', 'preludes_js')
+		preludes_path = os.join_path(v.pref.vroot, 'vlib', 'v', 'preludes_js')
 	}
 	if v.pref.trace_calls {
 		user_files << os.join_path(preludes_path, 'trace_calls.v')
@@ -308,7 +306,11 @@ pub fn (v &Builder) get_user_files() []string {
 		user_files << os.join_path(preludes_path, 'live_shared.v')
 	}
 	if v.pref.is_test {
-		user_files << os.join_path(preludes_path, 'test_runner.v')
+		if v.pref.backend == .js_node {
+			user_files << os.join_path(preludes_path, 'test_runner.v')
+		} else {
+			user_files << os.join_path(preludes_path, 'test_runner.c.v')
+		}
 		//
 		mut v_test_runner_prelude := os.getenv('VTEST_RUNNER')
 		if v.pref.test_runner != '' {
@@ -327,11 +329,11 @@ pub fn (v &Builder) get_user_files() []string {
 		}
 		user_files << v_test_runner_prelude
 	}
-	if v.pref.is_test && v.pref.is_stats {
+	if v.pref.is_test && v.pref.show_asserts {
 		user_files << os.join_path(preludes_path, 'tests_with_stats.v')
-	}
-	if v.pref.backend.is_js() && v.pref.is_stats && v.pref.is_test {
-		user_files << os.join_path(preludes_path, 'stats_import.js.v')
+		if v.pref.backend.is_js() {
+			user_files << os.join_path(preludes_path, 'stats_import.js.v')
+		}
 	}
 	if v.pref.is_prof {
 		user_files << os.join_path(preludes_path, 'profiled_program.v')

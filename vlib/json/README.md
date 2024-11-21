@@ -1,9 +1,10 @@
-## Description:
+## Description
 
 The `json` module provides encoding/decoding of V data structures to/from JSON.
-For more details, see also the 
+For more details, see also the
 [JSON section of the V documentation](https://github.com/vlang/v/blob/master/doc/docs.md#json)
-## Examples:
+
+## Examples
 
 Here is an example of encoding and decoding a V struct with several fields.
 Note that you can specify different names in the json encoding for the fields,
@@ -21,14 +22,16 @@ enum JobTitle {
 struct Employee {
 mut:
 	name   string
-	family string   [json: '-'] // this field will be skipped
+	family string @[json: '-'] // this field will be skipped
 	age    int
 	salary f32
-	title  JobTitle [json: 'ETitle'] // the key for this field will be 'ETitle', not 'title'
+	title  JobTitle @[json: 'ETitle'] // the key for this field will be 'ETitle', not 'title'
+	notes  string   @[omitempty]      // the JSON property is not created if the string is equal to '' (an empty string).
+	// TODO: document @[raw]
 }
 
 fn main() {
-	x := Employee{'Peter', 'Begins', 28, 95000.5, .worker}
+	x := Employee{'Peter', 'Begins', 28, 95000.5, .worker, ''}
 	println(x)
 	s := json.encode(x)
 	println('JSON encoding of employee x: ${s}')

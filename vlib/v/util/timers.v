@@ -1,14 +1,14 @@
-// Copyright (c) 2019-2023 Alexander Medvednikov. All rights reserved.
+// Copyright (c) 2019-2024 Alexander Medvednikov. All rights reserved.
 // Use of this source code is governed by an MIT license
 // that can be found in the LICENSE file.
-[has_globals]
+@[has_globals]
 module util
 
 import time
 
 __global g_timers = new_timers(should_print: false, label: 'g_timers')
 
-[heap]
+@[heap]
 pub struct Timers {
 	label string
 pub mut:
@@ -18,8 +18,9 @@ pub mut:
 	already_shown []string
 }
 
-[params]
+@[params]
 pub struct TimerParams {
+pub:
 	should_print bool
 	label        string
 }
@@ -29,9 +30,9 @@ pub fn new_timers(params TimerParams) &Timers {
 		eprintln('>>>> new_timers, should_print: ${params.should_print} | label: ${params.label}')
 	}
 	return &Timers{
-		label: params.label
-		swatches: map[string]time.StopWatch{}
-		should_print: params.should_print
+		label:         params.label
+		swatches:      map[string]time.StopWatch{}
+		should_print:  params.should_print
 		already_shown: []string{cap: 100}
 	}
 }
@@ -70,7 +71,10 @@ pub fn (mut t Timers) measure(name string) i64 {
 		eprintln('>   Available timers:')
 		eprintln('>   ${timer_keys}')
 	}
-	ms := t.swatches[name].elapsed().microseconds()
+	mut sw := t.swatches[name]
+	ms := sw.elapsed().microseconds()
+	sw.pause()
+	t.swatches[name] = sw
 	return ms
 }
 
@@ -111,8 +115,13 @@ pub fn (mut t Timers) message(name string) string {
 }
 
 pub fn (mut t Timers) show(label string) {
-	formatted_message := t.message(label)
+	if v_memory_panic {
+		// Showing timers uses string interpolation, and allocating in this case
+		// will just cause a second panic to be shown; it is better to just not show anything
+		return
+	}
 	if t.should_print {
+		formatted_message := t.message(label)
 		println(formatted_message)
 	}
 	t.already_shown << label

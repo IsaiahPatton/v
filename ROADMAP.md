@@ -1,3 +1,6 @@
+Roadmap with big features.
+For a list of all features and fixes, check out the changelog.
+
 ## [Version 0.3]
 
 - [x] gc option
@@ -32,29 +35,40 @@
 
 ## [Version 0.5]
 
-- [ ] [Thread safe maps](https://github.com/vlang/v/discussions/11729)
-- [ ] Parallel parser
-- [ ] Parallel checker
-- [ ] Parallel C compilation
+- [x] Parallel parser (not integrated yet)
+- [x] Parallel checker (not integrated yet)
+- [x] Parallel C compilation (not integrated yet)
+- [x] 64/32 bit int depending on arch (will remove array.len limitation on 64 bit systems)
+- [ ] `copy()` builtin function (e.g. for easier conversion from `[]Foo` to `[4]Foo`)
+- [x] Lambdas: `a.sort(|a, b| a > b)`
+- [ ] Custom attributes
+- [ ] Contexts that are passed implicitly (e.g. for custom allocation/memory management)
+- [x] Implicit Veb contexts passed to requests
 - [ ] Direct C/C++ interop without generating wrappers
+- [ ] Make ORM work without installing developer libs (libpq-dev etc)
+
+## [Version 0.6]
+
+- [ ] Integrate the new parallel parser/checker/cgen
+- [ ] Incremental compilation
+- [ ] Runtime race detector
+- [ ] [Thread safe maps](https://github.com/vlang/v/discussions/11729)
 - [ ] `recover()` from panics
 - [ ] -usecache on by default
 - [ ] -skip-unused on by default
-- [ ] 64/32 bit int depending on arch (will remove array.len limitation on 64 bit systems)
-- [ ] `copy()` builtin function (e.g. for easier conversion from `[]Foo` to `[4]Foo`)
-- [x] Lambdas: `a.sort(|a, b| a > b)`
-- [ ] Custom attributes.
-- [ ] `arr.first() or { }` like `arr[0] or { }`
+- [ ] ORM migrations
+- [ ] Allow `$if` everywhere: top level, inside struct definitions, etc
 
 ## [Version 1.0]
 
 - [ ] Cross compilation of C
 - [ ] Big remaining bugs fixed
 - [ ] More powerful comptime
-- [ ] Constrains for generics
+- [ ] Constraints for generics
 - [ ] Coroutines on Windows
 - [ ] Autofree memory management option ready for production
 - [ ] C2V supporting entire C99 standard
+- [ ] [Shared compiled libs](https://github.com/vlang/rfcs/issues/27)
 
 ### Tooling
 

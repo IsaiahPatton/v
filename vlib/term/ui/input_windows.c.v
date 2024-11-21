@@ -1,7 +1,7 @@
-// Copyright (c) 2020-2021 Raúl Hernández. All rights reserved.
+// Copyright (c) 2020-2024 Raúl Hernández. All rights reserved.
 // Use of this source code is governed by an MIT license
 // that can be found in the LICENSE file.
-[has_globals]
+@[has_globals]
 module ui
 
 import os
@@ -82,7 +82,7 @@ pub fn init(cfg Config) &Context {
 	}
 
 	ctx_ptr = ctx
-	C.atexit(restore_terminal_state)
+	at_exit(restore_terminal_state) or {}
 	for code in ctx.cfg.reset {
 		os.signal_opt(code, fn (_ os.Signal) {
 			mut c := ctx_ptr
@@ -136,7 +136,7 @@ fn (mut ctx Context) parse_events() {
 	}
 
 	// print('$nr_events | ')
-	if !C.ReadConsoleInput(ctx.stdin_handle, &ctx.read_buf[0], ui.buf_size, &nr_events) {
+	if !C.ReadConsoleInput(ctx.stdin_handle, &ctx.read_buf[0], buf_size, &nr_events) {
 		panic('could not read from stdin')
 	}
 	for i in 0 .. nr_events {
@@ -184,13 +184,13 @@ fn (mut ctx Context) parse_events() {
 				}
 
 				mut event := &Event{
-					typ: .key_down
+					typ:       .key_down
 					modifiers: modifiers
-					code: code
-					ascii: ascii
-					width: int(e.dwControlKeyState)
-					height: int(e.wVirtualKeyCode)
-					utf8: unsafe { e.uChar.UnicodeChar.str() }
+					code:      code
+					ascii:     ascii
+					width:     int(e.dwControlKeyState)
+					height:    int(e.wVirtualKeyCode)
+					utf8:      unsafe { e.uChar.UnicodeChar.str() }
 				}
 				ctx.event(event)
 			}
@@ -233,36 +233,36 @@ fn (mut ctx Context) parse_events() {
 							EventType.mouse_drag
 						}
 						ctx.event(&Event{
-							typ: typ
-							x: x
-							y: y
-							button: button
+							typ:       typ
+							x:         x
+							y:         y
+							button:    button
 							modifiers: modifiers
 						})
 					}
 					C.MOUSE_WHEELED {
 						ctx.event(&Event{
-							typ: .mouse_scroll
+							typ:       .mouse_scroll
 							direction: if i16(e.dwButtonState >> 16) < 0 {
 								Direction.up
 							} else {
 								Direction.down
 							}
-							x: x
-							y: y
+							x:         x
+							y:         y
 							modifiers: modifiers
 						})
 					}
 					0x0008 { // C.MOUSE_HWHEELED
 						ctx.event(&Event{
-							typ: .mouse_scroll
+							typ:       .mouse_scroll
 							direction: if i16(e.dwButtonState >> 16) < 0 {
 								Direction.right
 							} else {
 								Direction.left
 							}
-							x: x
-							y: y
+							x:         x
+							y:         y
 							modifiers: modifiers
 						})
 					}
@@ -275,10 +275,10 @@ fn (mut ctx Context) parse_events() {
 						}
 						ctx.mouse_down = button
 						ctx.event(&Event{
-							typ: .mouse_down
-							x: x
-							y: y
-							button: button
+							typ:       .mouse_down
+							x:         x
+							y:         y
+							button:    button
 							modifiers: modifiers
 						})
 					}
@@ -297,10 +297,10 @@ fn (mut ctx Context) parse_events() {
 				if w != ctx.window_width || h != ctx.window_height {
 					ctx.window_width, ctx.window_height = w, h
 					mut event := &Event{
-						typ: .resized
-						width: ctx.window_width
+						typ:    .resized
+						width:  ctx.window_width
 						height: ctx.window_height
-						utf8: utf8
+						utf8:   utf8
 					}
 					ctx.event(event)
 				}
@@ -316,14 +316,14 @@ fn (mut ctx Context) parse_events() {
 	}
 }
 
-[inline]
+@[inline]
 fn save_title() {
 	// restore the previously saved terminal title
 	print('\x1b[22;0t')
 	flush_stdout()
 }
 
-[inline]
+@[inline]
 fn load_title() {
 	// restore the previously saved terminal title
 	print('\x1b[23;0t')

@@ -1,18 +1,16 @@
 module strconv
 
-// Copyright (c) 2019-2023 Alexander Medvednikov. All rights reserved.
+// Copyright (c) 2019-2024 Alexander Medvednikov. All rights reserved.
 // Use of this source code is governed by an MIT license
 // that can be found in the LICENSE file.
 // TODO: use options, or some way to return default with error.
-const (
-	// int_size is the size in bits of an int or uint value.
-	// int_size = 32 << (~u32(0) >> 63)
-	// max_u64 = u64(u64(1 << 63) - 1)
-	int_size = 32
-	max_u64  = u64(18446744073709551615) // as u64 // use this until we add support
-)
+// int_size is the size in bits of an int or uint value.
+// int_size = 32 << (~u32(0) >> 63)
+// max_u64 = u64(u64(1 << 63) - 1)
+const int_size = 32
+const max_u64 = u64(18446744073709551615)
 
-[inline]
+@[inline]
 pub fn byte_to_lower(c u8) u8 {
 	return c | 32
 }
@@ -35,9 +33,9 @@ pub fn common_parse_uint(s string, _base int, _bit_size int, error_on_non_digit 
 
 // the first returned value contains the parsed value,
 // the second returned value contains the error code (0 = OK, >1 = index of first non-parseable character + 1, -1 = wrong base, -2 = wrong bit size, -3 = overflow)
-[direct_array_access]
+@[direct_array_access]
 pub fn common_parse_uint2(s string, _base int, _bit_size int) (u64, int) {
-	if s.len < 1 {
+	if s == '' {
 		return u64(0), 1
 	}
 
@@ -81,14 +79,14 @@ pub fn common_parse_uint2(s string, _base int, _bit_size int) (u64, int) {
 	}
 
 	if bit_size == 0 {
-		bit_size = strconv.int_size
+		bit_size = int_size
 	} else if bit_size < 0 || bit_size > 64 {
 		return u64(0), -2
 	}
 	// Cutoff is the smallest number such that cutoff*base > maxUint64.
 	// Use compile-time constants for common cases.
-	cutoff := strconv.max_u64 / u64(base) + u64(1)
-	max_val := if bit_size == 64 { strconv.max_u64 } else { (u64(1) << u64(bit_size)) - u64(1) }
+	cutoff := max_u64 / u64(base) + u64(1)
+	max_val := if bit_size == 64 { max_u64 } else { (u64(1) << u64(bit_size)) - u64(1) }
 	basem1 := base - 1
 
 	mut n := u64(0)
@@ -156,15 +154,15 @@ pub fn parse_uint(s string, _base int, _bit_size int) !u64 {
 
 // common_parse_int is called by parse int and allows the parsing
 // to stop on non or invalid digit characters and return with an error
-[direct_array_access]
+@[direct_array_access]
 pub fn common_parse_int(_s string, base int, _bit_size int, error_on_non_digit bool, error_on_high_digit bool) !i64 {
-	if _s.len < 1 {
+	if _s == '' {
 		// return error('parse_int: syntax error $s')
 		return i64(0)
 	}
 	mut bit_size := _bit_size
 	if bit_size == 0 {
-		bit_size = strconv.int_size
+		bit_size = int_size
 	}
 	mut s := _s
 	// Pick off leading sign.
@@ -220,13 +218,13 @@ pub fn parse_int(_s string, base int, _bit_size int) !i64 {
 }
 
 // atoi is equivalent to parse_int(s, 10, 0), converted to type int.
-[direct_array_access]
+@[direct_array_access]
 pub fn atoi(s string) !int {
 	if s == '' {
 		return error('strconv.atoi: parsing "": invalid syntax')
 	}
-	if (strconv.int_size == 32 && (0 < s.len && s.len < 10))
-		|| (strconv.int_size == 64 && (0 < s.len && s.len < 19)) {
+	if (int_size == 32 && (0 < s.len && s.len < 10))
+		|| (int_size == 64 && (0 < s.len && s.len < 19)) {
 		// Fast path for small integers that fit int type.
 		mut start_idx := 0
 		if s[0] == `-` || s[0] == `+` {

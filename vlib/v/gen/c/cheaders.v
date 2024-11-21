@@ -421,6 +421,18 @@ const c_common_macros = '
 	#endif
 #endif
 
+#if !defined(VHIDDEN)
+	#define VHIDDEN __attribute__((visibility("hidden")))
+	#ifdef _MSC_VER
+		#undef VHIDDEN
+		#define VHIDDEN
+	#endif
+	#if defined(__MINGW32__) || defined(__MINGW64__)
+		#undef VHIDDEN
+		#define VHIDDEN
+	#endif
+#endif
+
 #if !defined(VNORETURN)
 	#if defined(__TINYC__)
 		#include <stdnoreturn.h>
@@ -486,6 +498,9 @@ const c_helper_macros = '//============================== HELPER C MACROS ======
 #define _SLIT0 (string){.str=(byteptr)(""), .len=0, .is_lit=1}
 #define _SLIT(s) ((string){.str=(byteptr)("" s), .len=(sizeof(s)-1), .is_lit=1})
 #define _SLEN(s, n) ((string){.str=(byteptr)("" s), .len=n, .is_lit=1})
+// optimized way to compare literal strings
+#define _SLIT_EQ(sptr, slen, lit) (slen == sizeof("" lit)-1 && !vmemcmp(sptr, "" lit, slen))
+#define _SLIT_NE(sptr, slen, lit) (slen != sizeof("" lit)-1 || vmemcmp(sptr, "" lit, slen))
 
 // take the address of an rvalue
 #define ADDR(type, expr) (&((type[]){expr}[0]))
@@ -502,7 +517,7 @@ const c_headers = c_helper_macros + c_unsigned_comparison_functions + c_common_m
 	r'
 // c_headers
 typedef int (*qsort_callback_func)(const void*, const void*);
-#include <stdio.h>  // TODO remove all these includes, define all function signatures and types manually
+#include <stdio.h>  // TODO: remove all these includes, define all function signatures and types manually
 #include <stdlib.h>
 #include <string.h>
 
@@ -516,7 +531,6 @@ void _vcleanup(void);
 #define _ARR_LEN(a) ( (sizeof(a)) / (sizeof(a[0])) )
 
 void v_free(voidptr ptr);
-//voidptr memdup(voidptr src, isize sz);
 
 #if INTPTR_MAX == INT32_MAX
 	#define TARGET_IS_32BIT 1
@@ -528,7 +542,7 @@ void v_free(voidptr ptr);
 
 #if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__ || defined(__BYTE_ORDER) && __BYTE_ORDER == __BIG_ENDIAN || defined(__BIG_ENDIAN__) || defined(__ARMEB__) || defined(__THUMBEB__) || defined(__AARCH64EB__) || defined(_MIBSEB) || defined(__MIBSEB) || defined(__MIBSEB__)
 	#define TARGET_ORDER_IS_BIG 1
-#elif defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__ || defined(__BYTE_ORDER) && __BYTE_ORDER == __LITTLE_ENDIAN || defined(__LITTLE_ENDIAN__) || defined(__ARMEL__) || defined(__THUMBEL__) || defined(__AARCH64EL__) || defined(_MIPSEL) || defined(__MIPSEL) || defined(__MIPSEL__) || defined(_M_AMD64) || defined(_M_X64) || defined(_M_IX86)
+#elif defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__ || defined(__BYTE_ORDER) && __BYTE_ORDER == __LITTLE_ENDIAN || defined(__LITTLE_ENDIAN__) || defined(__ARMEL__) || defined(__THUMBEL__) || defined(__AARCH64EL__) || defined(_MIPSEL) || defined(__MIPSEL) || defined(__MIPSEL__) || defined(_M_AMD64) || defined(_M_ARM64) || defined(_M_X64) || defined(_M_IX86)
 	#define TARGET_ORDER_IS_LITTLE 1
 #else
 	#error "Unknown architecture endianness"
@@ -555,6 +569,11 @@ void v_free(voidptr ptr);
 	#include <sys/types.h>
 	#include <sys/resource.h>
 	#include <sys/wait.h> // os__wait uses wait on nix
+#endif
+
+#ifdef __FreeBSD__
+	#include <signal.h>
+	#include <execinfo.h>
 #endif
 
 #ifdef __NetBSD__
@@ -632,6 +651,11 @@ static void* g_live_info = NULL;
 
 const c_builtin_types = '
 //================================== builtin types ================================*/
+#if defined(__x86_64__) || defined(_M_AMD64) || defined(__aarch64__) || defined(__arm64__) || defined(_M_ARM64) || (defined(__riscv_xlen) && __riscv_xlen == 64)
+typedef int64_t vint_t;
+#else
+typedef int32_t vint_t;
+#endif
 typedef int64_t i64;
 typedef int16_t i16;
 typedef int8_t i8;
@@ -664,15 +688,17 @@ typedef u8 array_fixed_byte_300 [300];
 
 typedef struct sync__Channel* chan;
 
-#ifndef __cplusplus
-	#ifndef bool
-		#ifdef CUSTOM_DEFINE_4bytebool
-			typedef int bool;
-		#else
-			typedef u8 bool;
+#ifndef CUSTOM_DEFINE_no_bool
+	#ifndef __cplusplus
+		#ifndef bool
+			#ifdef CUSTOM_DEFINE_4bytebool
+				typedef int bool;
+			#else
+				typedef u8 bool;
+			#endif
+			#define true 1
+			#define false 0
 		#endif
-		#define true 1
-		#define false 0
 	#endif
 #endif
 
@@ -835,13 +861,13 @@ static inline uint64_t wyhash(const void *key, size_t len, uint64_t seed, const 
 	return _wymix(secret[1]^len,_wymix(a^secret[1],b^seed));
 }
 // the default secret parameters
-static const uint64_t _wyp[4] = {0xa0761d6478bd642full, 0xe7037ed1a0b428dbull, 0x8ebc6af09c88c6e3ull, 0x589965cc75374cc3ull};
+static const uint64_t _wyp[4] = {0xa0761d6478bd642f, 0xe7037ed1a0b428db, 0x8ebc6af09c88c6e3, 0x589965cc75374cc3};
 
 // a useful 64bit-64bit mix function to produce deterministic pseudo random numbers that can pass BigCrush and PractRand
-static inline uint64_t wyhash64(uint64_t A, uint64_t B){ A^=0xa0761d6478bd642full; B^=0xe7037ed1a0b428dbull; _wymum(&A,&B); return _wymix(A^0xa0761d6478bd642full,B^0xe7037ed1a0b428dbull);}
+static inline uint64_t wyhash64(uint64_t A, uint64_t B){ A^=0xa0761d6478bd642f; B^=0xe7037ed1a0b428db; _wymum(&A,&B); return _wymix(A^0xa0761d6478bd642f,B^0xe7037ed1a0b428db);}
 
 // the wyrand PRNG that pass BigCrush and PractRand
-static inline uint64_t wyrand(uint64_t *seed){ *seed+=0xa0761d6478bd642full; return _wymix(*seed,*seed^0xe7037ed1a0b428dbull);}
+static inline uint64_t wyrand(uint64_t *seed){ *seed+=0xa0761d6478bd642f; return _wymix(*seed,*seed^0xe7037ed1a0b428db);}
 
 #ifndef __vinix__
 // convert any 64 bit pseudo random numbers to uniform distribution [0,1). It can be combined with wyrand, wyhash64 or wyhash.

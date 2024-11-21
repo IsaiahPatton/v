@@ -1,8 +1,11 @@
 module main
 
-fn (mut c Create) set_bin_project_files(new bool) {
+import os
+
+fn (mut c Create) set_bin_project_files() {
+	base := if c.new_dir { c.name } else { '' }
 	c.files << ProjectFiles{
-		path: if new { '${c.name}/src/main.v' } else { 'src/main.v' }
+		path:    os.join_path(base, 'src', 'main.v')
 		content: "module main
 
 fn main() {

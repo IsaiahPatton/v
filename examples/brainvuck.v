@@ -11,9 +11,9 @@ const show_state = os.getenv('VERBOSE') != ''
 
 struct BFState {
 mut:
-	pc      u16         // program counter (PC) register
-	address u16         // a 16-bit address register, serving as an index to the memory below
-	program string      // the BF program
+	pc      u16    // program counter (PC) register
+	address u16    // a 16-bit address register, serving as an index to the memory below
+	program string // the BF program
 	memory  []u8 = []u8{len: 65536} // we have 2^16 bytes of memory
 	targets map[int]int // a mapping for the program address of a `[` to its corresponding `]`, and from a `]` to its corresponding opening `[`.
 }
@@ -75,7 +75,7 @@ fn (mut state BFState) find_matching_pairs() {
 	}
 }
 
-[noreturn]
+@[noreturn]
 fn (state &BFState) panic_for_bracket(b1 rune, b2 rune) {
 	panic('unbalanced `${b1}` found, its target `${b2}` is not known; address: ${state.address}, pc: ${state.pc}')
 }
@@ -131,7 +131,7 @@ fn (mut state BFState) run() ? {
 	}
 }
 
-[noreturn]
+@[noreturn]
 fn show_usage() {
 	eprintln('you need to supply a brainfuck program/expression as a string argument,')
 	eprintln('or filename.b, if it is located in a file (note the `.b` extension).')

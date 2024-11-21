@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2023 Alexander Medvednikov. All rights reserved.
+// Copyright (c) 2019-2024 Alexander Medvednikov. All rights reserved.
 // Use of this source code is governed by an MIT license that can be found in the LICENSE file.
 module checker
 
@@ -45,7 +45,7 @@ fn (mut c Checker) ident_autocomplete(node ast.Ident) {
 		*/
 
 		mut fields := []ACFieldMethod{cap: 10}
-		if sym.kind == .struct_ {
+		if sym.kind == .struct {
 			// Add fields, but only if it's a struct.
 			struct_info := sym.info as ast.Struct
 			// match struct_info {
@@ -81,7 +81,7 @@ fn (mut c Checker) ident_autocomplete(node ast.Ident) {
 	}
 }
 
-fn build_method_summary(method ast.Fn) string {
+fn build_method_summary(method &ast.Fn) string {
 	mut s := method.name + '('
 	for i, param in method.params {
 		s += param.name

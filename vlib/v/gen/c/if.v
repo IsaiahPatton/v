@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2023 Alexander Medvednikov. All rights reserved.
+// Copyright (c) 2019-2024 Alexander Medvednikov. All rights reserved.
 // Use of this source code is governed by an MIT license
 // that can be found in the LICENSE file.
 module c
@@ -6,9 +6,8 @@ module c
 import v.ast
 
 fn (mut g Gen) need_tmp_var_in_if(node ast.IfExpr) bool {
-	if node.is_expr && g.inside_ternary == 0 {
-		if g.is_autofree || node.typ.has_flag(.option) || node.typ.has_flag(.result)
-			|| node.is_comptime {
+	if node.is_expr && (g.inside_ternary == 0 || g.is_assign_lhs) {
+		if g.is_autofree || node.typ.has_option_or_result() || node.is_comptime || g.is_assign_lhs {
 			return true
 		}
 		for branch in node.branches {
@@ -40,74 +39,6 @@ fn (mut g Gen) need_tmp_var_in_expr(expr ast.Expr) bool {
 		return true
 	}
 	match expr {
-		ast.Ident {
-			return expr.or_expr.kind != .absent
-		}
-		ast.StringInterLiteral {
-			for e in expr.exprs {
-				if g.need_tmp_var_in_expr(e) {
-					return true
-				}
-			}
-		}
-		ast.IfExpr {
-			if g.need_tmp_var_in_if(expr) {
-				return true
-			}
-		}
-		ast.IfGuardExpr {
-			return true
-		}
-		ast.InfixExpr {
-			if g.need_tmp_var_in_expr(expr.left) {
-				return true
-			}
-			if g.need_tmp_var_in_expr(expr.right) {
-				return true
-			}
-		}
-		ast.MatchExpr {
-			return true
-		}
-		ast.CallExpr {
-			if expr.is_method {
-				left_sym := g.table.sym(expr.receiver_type)
-				if left_sym.kind in [.array, .array_fixed, .map] {
-					return true
-				}
-			}
-			if expr.or_block.kind != .absent {
-				return true
-			}
-			for arg in expr.args {
-				if g.need_tmp_var_in_expr(arg.expr) {
-					return true
-				}
-			}
-		}
-		ast.CastExpr {
-			return g.need_tmp_var_in_expr(expr.expr)
-		}
-		ast.ParExpr {
-			return g.need_tmp_var_in_expr(expr.expr)
-		}
-		ast.ConcatExpr {
-			for val in expr.vals {
-				if val is ast.CallExpr {
-					if val.return_type.has_flag(.option) || val.return_type.has_flag(.result) {
-						return true
-					}
-				}
-			}
-		}
-		ast.IndexExpr {
-			if expr.or_expr.kind != .absent {
-				return true
-			}
-			if g.need_tmp_var_in_expr(expr.index) {
-				return true
-			}
-		}
 		ast.ArrayInit {
 			if g.need_tmp_var_in_expr(expr.len_expr) {
 				return true
@@ -124,6 +55,64 @@ fn (mut g Gen) need_tmp_var_in_expr(expr ast.Expr) bool {
 				}
 			}
 		}
+		ast.CallExpr {
+			if expr.is_method {
+				left_sym := g.table.sym(expr.receiver_type)
+				if left_sym.kind in [.array, .array_fixed, .map] {
+					return true
+				}
+			}
+			if expr.or_block.kind != .absent {
+				return true
+			}
+			if g.need_tmp_var_in_expr(expr.left) {
+				return true
+			}
+			for arg in expr.args {
+				if g.need_tmp_var_in_expr(arg.expr) {
+					return true
+				}
+			}
+		}
+		ast.CastExpr {
+			return g.need_tmp_var_in_expr(expr.expr)
+		}
+		ast.ConcatExpr {
+			for val in expr.vals {
+				if val is ast.CallExpr {
+					if val.return_type.has_option_or_result() {
+						return true
+					}
+				}
+			}
+		}
+		ast.Ident {
+			return expr.or_expr.kind != .absent
+		}
+		ast.IfExpr {
+			if g.need_tmp_var_in_if(expr) {
+				return true
+			}
+		}
+		ast.IfGuardExpr {
+			return true
+		}
+		ast.IndexExpr {
+			if expr.or_expr.kind != .absent {
+				return true
+			}
+			if g.need_tmp_var_in_expr(expr.index) {
+				return true
+			}
+		}
+		ast.InfixExpr {
+			if g.need_tmp_var_in_expr(expr.left) {
+				return true
+			}
+			if g.need_tmp_var_in_expr(expr.right) {
+				return true
+			}
+		}
 		ast.MapInit {
 			for key in expr.keys {
 				if g.need_tmp_var_in_expr(key) {
@@ -132,6 +121,28 @@ fn (mut g Gen) need_tmp_var_in_expr(expr ast.Expr) bool {
 			}
 			for val in expr.vals {
 				if g.need_tmp_var_in_expr(val) {
+					return true
+				}
+			}
+		}
+		ast.MatchExpr {
+			return true
+		}
+		ast.ParExpr {
+			return g.need_tmp_var_in_expr(expr.expr)
+		}
+		ast.PrefixExpr {
+			return g.need_tmp_var_in_expr(expr.right)
+		}
+		ast.SelectorExpr {
+			if g.need_tmp_var_in_expr(expr.expr) {
+				return true
+			}
+			return expr.or_block.kind != .absent
+		}
+		ast.StringInterLiteral {
+			for e in expr.exprs {
+				if g.need_tmp_var_in_expr(e) {
 					return true
 				}
 			}
@@ -145,12 +156,8 @@ fn (mut g Gen) need_tmp_var_in_expr(expr ast.Expr) bool {
 					return true
 				}
 			}
-		}
-		ast.SelectorExpr {
-			if g.need_tmp_var_in_expr(expr.expr) {
-				return true
-			}
-			return expr.or_block.kind != .absent
+			sym := g.table.sym(expr.typ)
+			return sym.info is ast.Struct && sym.info.has_option
 		}
 		else {}
 	}
@@ -169,10 +176,6 @@ fn (mut g Gen) needs_conds_order(node ast.IfExpr) bool {
 }
 
 fn (mut g Gen) if_expr(node ast.IfExpr) {
-	if node.is_comptime {
-		g.comptime_if(node)
-		return
-	}
 	// For simple if expressions we can use C's `?:`
 	// `if x > 0 { 1 } else { 2 }` => `(x > 0)? (1) : (2)`
 	// For if expressions with multiple statements or another if expression inside, it's much
@@ -181,11 +184,11 @@ fn (mut g Gen) if_expr(node ast.IfExpr) {
 	// Always use this in -autofree, since ?: can have tmp expressions that have to be freed.
 	needs_tmp_var := g.need_tmp_var_in_if(node)
 	needs_conds_order := g.needs_conds_order(node)
-	tmp := if needs_tmp_var { g.new_tmp_var() } else { '' }
+	tmp := if node.typ != ast.void_type && needs_tmp_var { g.new_tmp_var() } else { '' }
 	mut cur_line := ''
 	mut raw_state := false
 	if needs_tmp_var {
-		mut styp := g.typ(node.typ)
+		mut styp := g.styp(node.typ)
 		if node.typ.has_flag(.option) {
 			raw_state = g.inside_if_option
 			defer {
@@ -203,7 +206,9 @@ fn (mut g Gen) if_expr(node ast.IfExpr) {
 		}
 		cur_line = g.go_before_last_stmt()
 		g.empty_line = true
-		g.writeln('${styp} ${tmp}; /* if prepend */')
+		if tmp != '' {
+			g.writeln('${styp} ${tmp}; /* if prepend */')
+		}
 		if g.infix_left_var_name.len > 0 {
 			g.writeln('if (${g.infix_left_var_name}) {')
 			g.indent++
@@ -242,13 +247,13 @@ fn (mut g Gen) if_expr(node ast.IfExpr) {
 		if cond is ast.IfGuardExpr {
 			if !is_guard {
 				is_guard = true
-				guard_idx = i
 				guard_vars = []string{len: node.branches.len}
 			}
+			guard_idx = i // saves the last if guard index
 			if cond.expr !in [ast.IndexExpr, ast.PrefixExpr] {
 				var_name := g.new_tmp_var()
 				guard_vars[i] = var_name
-				g.writeln('${g.typ(cond.expr_type)} ${var_name};')
+				g.writeln('${g.styp(g.unwrap_generic(cond.expr_type))} ${var_name};')
 			} else {
 				guard_vars[i] = ''
 			}
@@ -262,7 +267,7 @@ fn (mut g Gen) if_expr(node ast.IfExpr) {
 		// if last branch is `else {`
 		if i == node.branches.len - 1 && node.has_else {
 			g.writeln('{')
-			// define `err` only for simple `if val := opt {...} else {`
+			// define `err` for the last branch after a `if val := opt {...}' guard
 			if is_guard && guard_idx == i - 1 {
 				cvar_name := guard_vars[guard_idx]
 				g.writeln('\tIError err = ${cvar_name}.err;')
@@ -324,7 +329,7 @@ fn (mut g Gen) if_expr(node ast.IfExpr) {
 									if var.name == '_' {
 										continue
 									}
-									var_typ := g.typ(sym.info.types[vi])
+									var_typ := g.styp(sym.info.types[vi])
 									left_var_name := c_name(var.name)
 									if is_auto_heap {
 										g.writeln('\t${var_typ}* ${left_var_name} = (HEAP(${base_type}, *(${base_type}*)${var_name}.data).arg${vi});')
@@ -347,8 +352,7 @@ fn (mut g Gen) if_expr(node ast.IfExpr) {
 				g.writeln(';')
 				branch_cond_var_names << cond_var_name
 				g.set_current_pos_as_last_stmt_pos()
-				g.writeln(line)
-				g.writeln('if (${cond_var_name}) {')
+				g.writeln2(line, 'if (${cond_var_name}) {')
 			} else if i > 0 && branch_cond_var_names.len > 0 && !needs_tmp_var && needs_conds_order {
 				cond_var_name := g.new_tmp_var()
 				line := g.go_before_last_stmt()
@@ -378,6 +382,11 @@ fn (mut g Gen) if_expr(node ast.IfExpr) {
 						no_needs_par = true
 					}
 				}
+				inside_interface_deref_old := g.inside_interface_deref
+				if !g.inside_interface_deref && branch.cond is ast.Ident
+					&& g.table.is_interface_var(branch.cond.obj) {
+					g.inside_interface_deref = true
+				}
 				if no_needs_par {
 					g.write('if ')
 				} else {
@@ -389,6 +398,7 @@ fn (mut g Gen) if_expr(node ast.IfExpr) {
 				} else {
 					g.writeln(') {')
 				}
+				g.inside_interface_deref = inside_interface_deref_old
 			}
 		}
 		if needs_tmp_var {
