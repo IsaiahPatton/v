@@ -472,7 +472,7 @@ pub fn new_context(cfg Config) &Context {
 		config:           cfg
 		ft:               unsafe { nil }
 		ui_mode:          cfg.ui_mode
-		native_rendering: cfg.native_rendering
+		native_rendering: true // cfg.native_rendering
 		window:           sapp.Desc{
 			init_userdata_cb:  gg_init_sokol_window
 			frame_userdata_cb: gg_frame_fn
@@ -495,7 +495,7 @@ pub fn new_context(cfg Config) &Context {
 			max_dropped_file_path_length: cfg.max_dropped_file_path_length
 			swap_interval:                cfg.swap_interval
 		}
-		win32: 0
+		win32: unsafe { nil }
 	}
 
 	$if windows {

@@ -321,8 +321,8 @@ fn win32_create_window(x int, y int, w int, h int, title string) C.HWND {
 		cb_size: sizeof(Win32WndClass)
 		lpfn_wnd_proc: voidptr(my_wnd_proc)
 		lpsz_class_name: title.to_wide()
-		lpsz_menu_name: 0
-		h_icon_sm: 0
+		lpsz_menu_name: unsafe { 0 }
+		h_icon_sm: unsafe { 0 }
 		h_cursor: C.LoadCursor(C.NULL, C.LPCSTR(gg.idc_arrow))
 		style: gg.cs_hredraw + gg.cs_vredraw
 		hbr_background: C.HBRUSH(cw)
@@ -643,12 +643,6 @@ pub fn is_key_char(c u32) bool {
 // Draw rect filled
 fn win32_draw_rect_filled(hdc C.HDC, x f32, y f32, w f32, h f32, c gx.Color) {
 	color := to_colorref(c)
-	
-	//mut dat := C.GetWindowLongPtr(C.get_hwnd(), gg.gwlp_userdata)
-	//mut mydat := unsafe { &Win32Userdata(voidptr(dat)) }
-	//mydat.current << DrawInstruction{
-	//	typ: 'filled${x},${y},${w},${h},${c}'
-	//}
 
 	if c.a == 255 {
 		hbrush := C.CreateSolidBrush(color)
@@ -669,12 +663,6 @@ fn win32_draw_rect_filled_alpha(hdc C.HDC, x f32, y f32, w f32, h f32, c gx.Colo
 fn win32_draw_rect_empty(hdc C.HDC, x f32, y f32, w f32, h f32, c gx.Color) {
 	hbrush := C.CreateSolidBrush(C.RGB(c.r, c.g, c.b))
 	rec := C.tagRECT{x, y, x + w, y + h}
-
-	//mut dat := C.GetWindowLongPtr(C.get_hwnd(), gg.gwlp_userdata)
-	//mut mydat := unsafe { &Win32Userdata(voidptr(dat)) }
-	//mydat.current << DrawInstruction{
-	//	typ: 'remp${x},${y},${w},${h},${c}'
-	//}
 	
 	C.FrameRect(hdc, &rec, hbrush)
 	C.DeleteObject(C.HGDIOBJ(hbrush))
@@ -682,19 +670,12 @@ fn win32_draw_rect_empty(hdc C.HDC, x f32, y f32, w f32, h f32, c gx.Color) {
 
 fn win32_draw_rrect_filled(hdc C.HDC, x f32, y f32, w f32, h f32, radius f32, c gx.Color) {
 	color := to_colorref(c)
-	
-	//mut dat := C.GetWindowLongPtr(C.get_hwnd(), gg.gwlp_userdata)
-	//mut mydat := unsafe { &Win32Userdata(voidptr(dat)) }
-	//mydat.current << DrawInstruction{
-	//	typ: 'filled${x},${y},${w},${h},${c}'
-	//}
 
 	if c.a == 255 {
 		hbrush := C.CreateSolidBrush(color)
 		rec := C.tagRECT{x, y, x + w, y + h}
 
 		C.RoundRect(hdc, rec.left, rec.top, rec.right, rec.bottom, (radius * 2), (radius * 2))
-
 		
 		C.DeleteObject(C.HGDIOBJ(hbrush))
 		return

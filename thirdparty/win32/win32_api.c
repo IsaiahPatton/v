@@ -13,6 +13,9 @@ static is_win32_ui = false;
 static HWND hwnd;
 static PAINTSTRUCT ps;
 
+
+
+
 static int text_size;
 
 HWND get_hwnd() {
@@ -21,7 +24,7 @@ HWND get_hwnd() {
 
 HFONT my_create_font(int size) {
 	return CreateFont(size, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, ANSI_CHARSET, 
-				OUT_DEFAULT_PRECIS, CLIP_DFA_DISABLE, DEFAULT_QUALITY, DEFAULT_PITCH, TEXT("Arial"));
+				OUT_DEFAULT_PRECIS, CLIP_DFA_DISABLE, DEFAULT_QUALITY, DEFAULT_PITCH, TEXT("SegoeUI"));
 }
 
 void win32_set_text_size(int size) {
