@@ -611,7 +611,7 @@ pub fn (ctx &Context) end(options EndOptions) {
 			ctx.show_fps()
 		}
 	}
-
+	
 	$if windows {
 		if ctx.native_rendering {
 			// TODO: Move from win32.v
@@ -661,6 +661,25 @@ pub mut:
 }
 
 pub fn (ctx &Context) show_fps() {
+	$if windows {
+		if ctx.native_rendering {
+				ctx.set_text_cfg(ctx.fps.text_config)
+				fps_text := ctx.win32.fps.str()
+				if ctx.fps.width == 0 {
+					mut fps := unsafe { &ctx.fps }
+					fps.width, fps.height = ctx.text_size('60') // usual size; prevents blinking on variable width fonts
+				}
+				char_width := ctx.fps.text_config.size / 2
+				mut full_width := ctx.fps.width
+				if char_width * fps_text.len > ctx.fps.width {
+					full_width += (fps_text.len - 2) * char_width
+				}
+				ctx.draw_rect_filled(ctx.fps.x, ctx.fps.y, full_width + 12, ctx.fps.height + 8, ctx.fps.background_color)
+				ctx.draw_text(ctx.fps.x, ctx.fps.y, fps_text, ctx.fps.text_config)
+			return
+		}
+	}
+
 	if !ctx.font_inited {
 		return
 	}

@@ -252,6 +252,7 @@ pub fn (ctx &Context) text_height(s string) int {
 
 // text_size returns the width and height of the `string` `s` in pixels.
 pub fn (ctx &Context) text_size(s string) (int, int) {
+	dump(ctx.scale)
 	$if windows {
 		if ctx.native_rendering {
 			width, height := win32_text_size(ctx.win32.hdc, s)

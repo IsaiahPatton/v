@@ -30,6 +30,10 @@ void win32_set_text_size(int size) {
 
 SIZE my_text_size(HDC hdc, char* text, int textLength) {
 	SIZE size;
+	
+	if (text_size == 0) {
+		text_size = 16;
+	}
 
 	// select a font into the device context
 	HFONT hFont = my_create_font(text_size);
@@ -40,7 +44,6 @@ SIZE my_text_size(HDC hdc, char* text, int textLength) {
 	
 	DeleteObject(hFont);
 
-	// the width and height of the text are in the size structure
 	return size;
 }
 
@@ -141,6 +144,11 @@ void WndProc_pb(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
 		ps.rcPaint.bottom - ps.rcPaint.top, hBufferDC, ps.rcPaint.left, ps.rcPaint.top, SRCCOPY);
 	EndPaint(hWnd, &ps);
 	return 0;
+}
+
+void update_win(HWND hwnd) {
+	//RedrawWindow(hwnd, NULL, NULL, RDW_ERASE | RDW_INVALIDATE); 
+	UpdateWindow(hwnd);
 }
 
 void win32_set_bg(int r, int g, int b) {
